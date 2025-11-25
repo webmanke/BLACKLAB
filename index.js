@@ -1,67 +1,120 @@
 import express from "express";
-import bodyParser from "body-parser";
 import axios from "axios";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
 
-const TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_ID = process.env.PHONE_NUMBER_ID;
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "blacklabverify";
+// ENV variables
+const token = process.env.WHATSAPP_TOKEN;
+const phone_number_id = process.env.PHONE_NUMBER_ID;
 
-// WEBHOOK VERIFY
+// ---------- HELPER FUNCTIONS ----------
+
+// Send typing indicator (looks natural)
+async function sendTypingIndicator(to) {
+  await axios.post(
+    `https://graph.facebook.com/v20.0/${phone_number_id}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to: to,
+      type: "typing_on"
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    }
+  );
+}
+
+// Send normal text message
+async function sendText(to, message) {
+  await axios.post(
+    `https://graph.facebook.com/v20.0/${phone_number_id}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to: to,
+      type: "text",
+      text: {
+        body: `${message}\n\n— Blacklab Systems`
+      }
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json"
+      }
+    }
+  );
+}
+
+// ---------- MESSAGE HANDLER (COMMAND SYSTEM) ----------
+async function handleUserMessage(from, text) {
+  const msg = text.trim().toLowerCase();
+
+  // COMMANDS
+  const commands = {
+    hi: "Hello! How can I assist you today?",
+    hello: "Hello! How can I assist you today?",
+
+    help: "Here are the commands you can use:\n- hi\n- help\n- about\n- menu",
+
+    about:
+      "I am Blacklab, your intelligent assistant. I'm here to make your experience smooth and efficient!",
+
+    menu:
+      "Main Menu:\n1. About Blacklab\n2. Help Center\n3. Coming Soon Features 🚀",
+
+    default:
+      "I'm not sure I understand that yet — but I'm learning! Type *help* to see what I can do."
+  };
+
+  const reply = commands[msg] || commands.default;
+  await sendText(from, reply);
+}
+
+// ---------- WEBHOOK POST ----------
+app.post("/webhook", async (req, res) => {
+  try {
+    const message =
+      req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+
+    if (!message) return res.sendStatus(200);
+
+    const from = message.from;
+    const text = message.text?.body || "";
+
+    // Show typing animation
+    await sendTypingIndicator(from);
+
+    // Handle the message
+    await handleUserMessage(from, text);
+
+    res.sendStatus(200);
+  } catch (error) {
+    console.error("Webhook error:", error.response?.data || error);
+    res.sendStatus(500);
+  }
+});
+
+// ---------- WEBHOOK VERIFICATION ----------
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
+  const verify = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-  const token = req.query["hub.verify_token"];
 
-  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+  if (mode === "subscribe" && verify === process.env.VERIFY_TOKEN) {
     return res.status(200).send(challenge);
   }
 
   res.sendStatus(403);
 });
 
-// MAIN BOT LOGIC
-app.post("/webhook", async (req, res) => {
-  try {
-    const entry = req.body.entry?.[0];
-    const changes = entry?.changes?.[0];
-    const message = changes?.value?.messages?.[0];
-
-    if (message) {
-      const from = message.from;
-
-      // Send interactive message with footer
-      await axios.post(
-        `https://graph.facebook.com/v21.0/${PHONE_ID}/messages`,
-        {
-          messaging_product: "whatsapp",
-          to: from,
-          type: "interactive",
-          interactive: {
-            type: "button",
-            body: {
-              text: "Hello 👋, welcome to BlackLab!"
-            },
-            footer: {
-              text: "BlackLab Systems"
-            },
-            action: {
-              buttons: [
-                {
-                  type: "reply",
-                  reply: {
-                    id: "status_option",
-                    title: "Status"
-                  }
-                },
-                {
-                  type: "reply",
-                  reply: {
+// ---------- START SERVER ----------
+app.listen(3000, () =>
+  console.log("Blacklab bot running smoothly 🚀")
+);                  reply: {
                     id: "help_option",
                     title: "Help"
                   }
