@@ -1,116 +1,173 @@
 import express from "express";
 import axios from "axios";
+import qs from "qs";
+import "dotenv/config";
 
 const app = express();
 app.use(express.json());
 
-// ENV Variables
-const token = process.env.WHATSAPP_TOKEN;
-const phone_number_id = process.env.PHONE_NUMBER_ID;
-const verify_token = process.env.VERIFY_TOKEN;
+// ----------------------
+// TEMP SESSION MEMORY
+// ----------------------
+const sessions = {}; 
+function getSession(user) {
+  if (!sessions[user]) sessions[user] = {};
+  return sessions[user];
+}
 
-// -------------------------------------------------------
-// SEND TEXT
-// -------------------------------------------------------
-async function sendText(to, message) {
+// ----------------------
+// SEND MESSAGE HELPER
+// ----------------------
+async function sendMessage(to, messageObj) {
   try {
-    await axios.post(
-      `https://graph.facebook.com/v20.0/${phone_number_id}/messages`,
-      {
+    await axios({
+      method: "POST",
+      url: `https://graph.facebook.com/v21.0/${process.env.PHONE_NUMBER_ID}/messages`,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
+      },
+      data: {
         messaging_product: "whatsapp",
         to,
-        type: "text",
-        text: { body: `${message}\n\n— Blacklab Systems` },
+        ...messageObj,
       },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
+    });
+  } catch (err) {
+    console.error("WhatsApp API Error:", err.response?.data || err.message);
+  }
+}
+
+// ----------------------
+// MAIN REPLY HANDLER
+// ----------------------
+async function handleIncomingMessage(from, body, type) {
+  const session = getSession(from);
+
+  // ------------------------
+  // BUTTON CLICKS
+  // ------------------------
+  if (type === "interactive") {
+    const buttonId = body?.interactive?.button_reply?.id;
+
+    if (buttonId === "ENTER_NAME") {
+      session.awaiting = "name";
+      return sendMessage(from, {
+        text: { body: "Great! Please enter your name:" }
+      });
+    }
+
+    if (buttonId === "ENTER_EMAIL") {
+      session.awaiting = "email";
+      return sendMessage(from, {
+        text: { body: "Please type your email address:" }
+      });
+    }
+
+    if (buttonId === "SHOW_INFO") {
+      return sendMessage(from, {
+        text: { body: `Here’s what I know so far:\n\nName: ${session.name || "Not set"}\nEmail: ${session.email || "Not set"}` }
+      });
+    }
+
+    return sendMessage(from, { text: { body: "I clicked a button but didn’t understand which!" } });
+  }
+
+  // ------------------------
+  // NORMAL TEXT MESSAGES
+  // ------------------------
+  const text = body?.text?.body?.trim();
+
+  if (session.awaiting === "name") {
+    session.name = text;
+    session.awaiting = null;
+
+    return sendMessage(from, {
+      text: { body: `Nice to meet you, ${session.name}!` }
+    });
+  }
+
+  if (session.awaiting === "email") {
+    session.email = text;
+    session.awaiting = null;
+
+    return sendMessage(from, {
+      text: { body: `Your email *${session.email}* has been saved!` }
+    });
+  }
+
+  // ------------------------
+  // DEFAULT MENU MESSAGE
+  // ------------------------
+  return sendMessage(from, {
+    text: { body: "Choose one option below 👇" },
+    "type": "interactive",
+    "interactive": {
+      "type": "button",
+      "body": { "text": "What would you like to do?" },
+      "action": {
+        "buttons": [
+          {
+            "type": "reply",
+            "reply": { "id": "ENTER_NAME", "title": "Enter Name" }
+          },
+          {
+            "type": "reply",
+            "reply": { "id": "ENTER_EMAIL", "title": "Enter Email" }
+          },
+          {
+            "type": "reply",
+            "reply": { "id": "SHOW_INFO", "title": "Show Saved Info" }
+          }
+        ]
       }
-    );
-  } catch (error) {
-    console.error("sendText error:", error.response?.data || error);
-  }
+    }
+  });
 }
 
-// -------------------------------------------------------
-// HANDLE USER MESSAGE
-// -------------------------------------------------------
-async function handleIncomingMessage(from, text) {
-  const msg = text.trim().toLowerCase();
+// ----------------------
+// WEBHOOK VERIFY
+// ----------------------
+app.get("/webhook", (req, res) => {
+  let VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 
-  // BASIC COMMANDS (Your custom replies)
-  if (msg === "hi" || msg === "hello") {
-    return sendText(from, "Hello! How can I assist you today?");
+  let mode = req.query["hub.mode"];
+  let token = req.query["hub.verify_token"];
+  let challenge = req.query["hub.challenge"];
+
+  if (mode && token) {
+    if (mode === "subscribe" && token === VERIFY_TOKEN) {
+      console.log("WEBHOOK VERIFIED");
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
+    }
   }
+});
 
-  if (msg === "help") {
-    return sendText(
-      from,
-      "Here are the commands you can use:\n- hi\n- help\n- about\n- menu"
-    );
-  }
+// ----------------------
+// RECEIVE MESSAGES
+// ----------------------
+app.post("/webhook", (req, res) => {
+  const data = req.body;
 
-  if (msg === "about") {
-    return sendText(
-      from,
-      "I am Blacklab, your intelligent WhatsApp assistant."
-    );
-  }
-
-  if (msg === "menu") {
-    return sendText(
-      from,
-      "Main Menu:\n1. About Blacklab\n2. Help\n3. More features coming soon 🚀"
-    );
-  }
-
-  // DEFAULT
-  return sendText(
-    from,
-    "I didn't understand that yet. Type *help* to see available commands."
-  );
-}
-
-// -------------------------------------------------------
-// WEBHOOK POST
-// -------------------------------------------------------
-app.post("/webhook", async (req, res) => {
   try {
-    const entry = req.body.entry?.[0]?.changes?.[0]?.value;
-    const message = entry?.messages?.[0];
-
+    const message = data?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     if (!message) return res.sendStatus(200);
 
     const from = message.from;
-    const text = message.text?.body || "";
+    const type = message.type;
 
-    await handleIncomingMessage(from, text);
+    handleIncomingMessage(from, message, type);
 
     res.sendStatus(200);
-  } catch (error) {
-    console.error("Webhook POST error:", error);
+  } catch (e) {
+    console.error("Webhook error:", e);
     res.sendStatus(500);
   }
 });
 
-// -------------------------------------------------------
-// WEBHOOK VERIFY
-// -------------------------------------------------------
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode === "subscribe" && token === verify_token) {
-    return res.status(200).send(challenge);
-  }
-
-  res.sendStatus(403);
-});
-
-// -------------------------------------------------------
-app.listen(3000, () => {
-  console.log("Blacklab bot running successfully 🚀");
+// ----------------------
+app.listen(process.env.PORT || 3000, () => {
+  console.log("Bot running...");
 });
