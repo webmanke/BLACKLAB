@@ -1,108 +1,199 @@
+require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
+
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
-const port = process.env.PORT || 3000;
-const verifyToken = process.env.VERIFY_TOKEN; // Set this to a secret string, e.g., 'blacklab-secret'
-const waToken = process.env.WA_ACCESS_TOKEN; // Your permanent WhatsApp access token
-const phoneNumberId = process.env.PHONE_NUMBER_ID; // Your WhatsApp Phone Number ID
-const apiVersion = 'v20.0'; // Update if Meta changes it (check docs)
+const PORT = process.env.PORT || 3000;
 
-// Webhook verification (GET request)
-app.get('/', (req, res) => {
+// ==== CONFIG – SET THESE IN RENDER ENVIRONMENT VARIABLES ====
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;           // e.g. mysecretblacklab2025
+const WA_ACCESS_TOKEN = process.env.WA_ACCESS_TOKEN;     // Permanent token from Meta
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;     // From WhatsApp > API Setup
+const API_VERSION = 'v20.0';
+// =============================================================
+
+// Webhook verification (GET)
+app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
-  const challenge = req.query['hub.challenge'];
   const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
 
-  if (mode === 'subscribe' && token === verifyToken) {
-    console.log('WEBHOOK VERIFIED');
-    res.status(200).send(challenge);
-  } else {
-    res.status(403).end();
-  }
-});
-
-// Handle incoming webhooks (POST request)
-app.post('/', async (req, res) => {
-  const body = req.body;
-  console.log('Incoming webhook:', JSON.stringify(body, null, 2));
-
-  if (body.object === 'whatsapp_business_account') {
-    const entry = body.entry[0];
-    const change = entry.changes[0];
-    const message = change.value.messages ? change.value.messages[0] : null;
-
-    if (message) {
-      const from = message.from; // Sender's phone number
-      const msgType = message.type;
-
-      if (msgType === 'text') {
-        // Respond with business menu using interactive buttons
-        await sendInteractiveButtons(from, 'Welcome to BlackLab! How can we assist your business today?');
-      } else if (msgType === 'interactive' && message.interactive.type === 'button_reply') {
-        // Handle button press (e.g., echo choice; extend for business logic like routing to support)
-        const buttonId = message.interactive.button_reply.id;
-        let responseText = `You selected: ${buttonId}. `;
-        if (buttonId === 'sales') responseText += 'Our sales team will contact you shortly.';
-        else if (buttonId === 'support') responseText += 'Please describe your issue.';
-        else if (buttonId === 'info') responseText += 'BlackLab offers premium business bots.';
-        await sendTextMessage(from, responseText);
-      }
+  if (mode && token) {
+    if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+      console.log('WEBHOOK VERIFIED');
+      return res.status(200).send(challenge);
+    } else {
+      return res.sendStatus(403);
     }
   }
-
-  res.status(200).end();
+  res.sendStatus(200);
 });
 
-// Function to send text message
-async function sendTextMessage(to, text) {
+// Receive messages (POST)
+app.post('/webhook', async (req, res) => {
   try {
-    await axios.post(
-      `https://graph.facebook.com/\( {apiVersion}/ \){phoneNumberId}/messages`,
-      {
-        messaging_product: 'whatsapp',
-        to,
+    const body = req.body;
+
+    if (body.object) {
+      for (const entry of body.entry) {
+        for (const change of entry.changes) {
+          const value = change.value;
+          if (value.messages && value.messages[0]) {
+            const message = value.messages[0];
+            const from = message.from; // customer phone number
+
+            // Always send the business button menu on any incoming message
+            await sendButtonMenu(from);
+          }
+        }
+      }
+      res.sendStatus(200);
+    } else {
+      res.sendStatus(404);
+    }
+  } catch (error) {
+    console.error('Webhook error:', error.message);
+    res.sendStatus(500);
+  }
+});
+
+// Send interactive button menu – the “best-in-class” business experience
+async function sendButtonMenu(to) {
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to: to,
+    type: 'interactive',
+    interactive: {
+      type: 'button',
+      header: {
         type: 'text',
-        text: { body: text },
+        text: 'BLACKLAB'
       },
-      { headers: { Authorization: `Bearer ${waToken}` } }
-    );
-    console.log('Text message sent');
-  } catch (error) {
-    console.error('Error sending text:', error.response.data);
-  }
+      body: {
+        text: 'Welcome to *BlackLab* – Premium WhatsApp Automation\n\nHow can we help your business today?'
+      },
+      footer: {
+        text: '24/7 Instant Support'
+      },
+      action: {
+        buttons: [
+          {
+            type: 'reply',
+            reply: {
+              id: 'SALES',
+              title: 'Sales Inquiry'
+            }
+          },
+          {
+            type: 'reply',
+            reply: {
+              id: 'SUPPORT',
+              title: 'Customer Support'
+            }
+          },
+          {
+            type: 'reply',
+            reply: {
+              id: 'INFO',
+              title: 'Product Info'
+            }
+          }
+        ]
+      }
+    }
+  };
+
+  await sendWhatsAppMessage(payload);
+
+  // Also send a quick text reply so user knows it’s live
+  setTimeout(async () => {
+    await sendText(to, 'Choose an option below');
+  }, 800);
 }
 
-// Function to send interactive buttons (business menu)
-async function sendInteractiveButtons(to, bodyText) {
+// Handle button replies
+app.post('/webhook', async (req, res) => {
+  // (We merge both routes – Express will handle it)
+  // This part runs when user presses a button
+  try {
+    const body = req.body;
+    if (body.object && body.entry) {
+      for (const entry of body.entry) {
+        if (entry.changes) {
+          for (const change of entry.changes) {
+            const value = change.value;
+            if (value.messages && value.messages[0]?.interactive) {
+              const interactive = value.messages[0].interactive;
+              const from = value.messages[0].from;
+
+              if (interactive.type === 'button_reply') {
+                const buttonId = interactive.button_reply.id;
+
+                let replyText = '';
+                switch (buttonId) {
+                  case 'SALES':
+                    replyText = 'A sales specialist will contact you within 5 minutes!\n\nPlease reply with your business name and needs.';
+                    break;
+                  case 'SUPPORT':
+                    replyText = 'Support team is here! Please describe your issue and we’ll solve it instantly.';
+                    break;
+                  case 'INFO':
+                    replyText = 'BlackLab is the most advanced WhatsApp business bot in 2025.\n• Interactive buttons\n• 24/7 automation\n• CRM integration ready\n\nWant a demo? Just type "demo"';
+                    break;
+                  default:
+                    replyText = 'Thank you for contacting BlackLab!';
+                }
+                await sendText(from, replyText);
+              }
+            }
+          }
+        }
+      }
+    }
+    res.sendStatus(200);
+  } catch (err) {
+    console.error(err);
+    res.sendStatus(500);
+  }
+});
+
+// Helper: send any WhatsApp message
+async function sendWhatsAppMessage(data) {
   try {
     await axios.post(
-      `https://graph.facebook.com/\( {apiVersion}/ \){phoneNumberId}/messages`,
+      `https://graph.facebook.com/\( {API_VERSION}/ \){PHONE_NUMBER_ID}/messages`,
+      data,
       {
-        messaging_product: 'whatsapp',
-        to,
-        type: 'interactive',
-        interactive: {
-          type: 'button',
-          body: { text: bodyText },
-          action: {
-            buttons: [
-              { type: 'reply', reply: { id: 'sales', title: 'Sales Inquiry' } },
-              { type: 'reply', reply: { id: 'support', title: 'Customer Support' } },
-              { type: 'reply', reply: { id: 'info', title: 'Product Info' } },
-            ],
-          },
-        },
-      },
-      { headers: { Authorization: `Bearer ${waToken}` } }
+        headers: {
+          Authorization: `Bearer ${WA_ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
     );
-    console.log('Interactive buttons sent');
   } catch (error) {
-    console.error('Error sending buttons:', error.response.data);
+    console.error('WA Send Error:', error.response?.data || error.message);
   }
 }
 
-app.listen(port, () => {
-  console.log(`BlackLab bot listening on port ${port}`);
+// Helper: send simple text
+async function sendText(to, text) {
+  await sendWhatsAppMessage({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'text',
+    text: { body: text }
+  });
+}
+
+// Root route so Render health check doesn’t fail
+app.get('/', (req, res) => {
+  res.send('BlackLab WhatsApp Bot is LIVE');
+});
+
+app.listen(PORT, () => {
+  console.log(`BlackLab is running on port ${PORT}`);
+  console.log(`Webhook URL: https://your-service.onrender.com/webhook`);
 });
