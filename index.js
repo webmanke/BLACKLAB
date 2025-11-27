@@ -1,145 +1,77 @@
 import express from "express";
+import bodyParser from "body-parser";
 import axios from "axios";
+import { menuTemplate } from "./templates.js";
 
 const app = express();
-app.use(express.json());
+app.use(bodyParser.json());
 
-// ENV VARS (Render)
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN;        // blacklabverify
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;    // permanent token
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;  // from Meta
+const token = process.env.WHATSAPP_TOKEN; // Your permanent token
+const verifyToken = "blacklabverify";
 
-// ---------------------------------------------------
-// SEND TEMPLATE HELPER
-// ---------------------------------------------------
-async function sendTemplate(to, templateName, components = []) {
-  try {
-    const payload = {
-      messaging_product: "whatsapp",
-      to,
-      type: "template",
-      template: {
-        name: templateName,
-        language: { code: "en" }
-      }
-    };
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const tokenCheck = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
 
-    if (components.length > 0) {
-      payload.template.components = components;
+  if (mode && tokenCheck) {
+    if (mode === "subscribe" && tokenCheck === verifyToken) {
+      console.log("Webhook verified!");
+      res.status(200).send(challenge);
+    } else {
+      res.sendStatus(403);
     }
+  }
+});
 
-    await axios({
-      method: "POST",
-      url: `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`,
-      headers: {
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        "Content-Type": "application/json"
+app.post("/webhook", async (req, res) => {
+  const data = req.body;
+
+  if (data.object && data.entry) {
+    for (const entry of data.entry) {
+      const changes = entry.changes;
+      if (changes) {
+        for (const change of changes) {
+          const messages = change.value.messages;
+          if (messages) {
+            for (const message of messages) {
+              const from = message.from;
+              const text = message.text?.body;
+
+              if (text?.toLowerCase() === "menu") {
+                await sendMessage(from, menuTemplate);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  res.sendStatus(200);
+});
+
+async function sendMessage(to, message) {
+  try {
+    await axios.post(
+      `https://graph.facebook.com/v17.0/${process.env.PHONE_NUMBER_ID}/messages`,
+      {
+        messaging_product: "whatsapp",
+        to,
+        ...message
       },
-      data: payload
-    });
-
-    console.log("Template sent:", templateName);
-
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
   } catch (err) {
     console.error("Template send error:", err.response?.data || err.message);
   }
 }
 
-// ---------------------------------------------------
-// GET WEBHOOK (META VERIFICATION)
-// ---------------------------------------------------
-app.get("/webhook", (req, res) => {
-  const mode = req.query["hub.mode"];
-  const token = req.query["hub.verify_token"];
-  const challenge = req.query["hub.challenge"];
-
-  if (mode && token) {
-    if (mode === "subscribe" && token === VERIFY_TOKEN) {
-      return res.status(200).send(challenge);
-    }
-  }
-
-  return res.sendStatus(403);
-});
-
-// ---------------------------------------------------
-// POST WEBHOOK (RECEIVE MESSAGES)
-// ---------------------------------------------------
-app.post("/webhook", async (req, res) => {
-  console.log("Incoming webhook:", JSON.stringify(req.body, null, 2));
-  res.sendStatus(200);
-
-  try {
-    const entry = req.body.entry?.[0];
-    const change = entry?.changes?.[0];
-    const message = change?.value?.messages?.[0];
-
-    if (!message) return;
-
-    const from = message.from;
-    const text = message.text?.body?.toLowerCase() || "";
-
-    console.log("From:", from, "Text:", text);
-
-    // ---------------------------------------------------
-    // MENU COMMAND
-    // ---------------------------------------------------
-    if (text === "menu") {
-      await sendTemplate(from, "blacklab_menu");
-      return;
-    }
-
-    // ---------------------------------------------------
-    // MENU OPTIONS → TRIGGERS TEMPLATES
-    // ---------------------------------------------------
-    if (text === "order assistance") {
-      await sendTemplate(from, "order_assistance_blacklab", [
-        {
-          type: "body",
-          parameters: [{ type: "text", text: "Customer" }]
-        }
-      ]);
-      return;
-    }
-
-    if (text === "know more") {
-      await sendTemplate(from, "about_blacklab_info");
-      return;
-    }
-
-    if (text === "call tony") {
-      await sendTemplate(from, "call_tony_blacklab");
-      return;
-    }
-
-    // ---------------------------------------------------
-    // FALLBACK RESPONSE
-    // ---------------------------------------------------
-    await axios({
-      method: "POST",
-      url: `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`,
-      headers: {
-        Authorization: `Bearer ${WHATSAPP_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      data: {
-        messaging_product: "whatsapp",
-        to: from,
-        text: { body: "Send 'menu' to explore BlackLab options." }
-      }
-    });
-
-  } catch (err) {
-    console.error("Message handling error:", err.response?.data || err.message);
-  }
-});
-
-// ---------------------------------------------------
-app.get("/", (req, res) => {
-  res.send("BlackLab WhatsApp Bot is running.");
-});
-
-// ---------------------------------------------------
-app.listen(3000, () => {
-  console.log("BlackLab bot running on port 3000");
+app.listen(process.env.PORT || 3000, () => {
+  console.log("BlackLab bot running...");
 });
