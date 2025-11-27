@@ -1,24 +1,22 @@
-export function getTemplateConfig(input) {
-  if (input.includes("hi") || input.includes("hello")) {
-    return {
-      name: "blacklab_welcome",
-      components: []
-    };
-  }
-
-  if (input.includes("info")) {
-    return {
-      name: "blacklab_info",
-      components: [
-        {
-          type: "body",
-          parameters: [
-            { type: "text", text: "BlackLab Operational" }
-          ]
-        }
+// templates.js
+const menuTemplate = {
+  type: "interactive",
+  interactive: {
+    type: "button",
+    body: {
+      text: "Welcome to BlackLab! Choose an option:"
+    },
+    footer: {
+      text: "© BlackLab"
+    },
+    action: {
+      buttons: [
+        { type: "reply", reply: { id: "order", title: "Order" } },
+        { type: "reply", reply: { id: "know_more", title: "Know More About Us" } },
+        { type: "reply", reply: { id: "call_tony", title: "Call Tony" } }
       ]
-    };
+    }
   }
+};
 
-  return null;
-}
+module.exports = { menuTemplate };
