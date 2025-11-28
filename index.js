@@ -8,11 +8,10 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WA_TOKEN = process.env.WA_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
-// Stats & Sessions
+// Stats & Session
 let stats = { received: 0, sent: 0, startTime: Date.now(), avgResponse: 0 };
 let logs = [];
 const processedIds = new Set();
-const sessions = new Map(); // from → { step, data }
 
 // LOGGING
 const log = (type, phone = "", text = "") => {
@@ -26,7 +25,7 @@ const log = (type, phone = "", text = "") => {
   if (logs.length > 500) logs.shift();
 };
 
-// DASHBOARD (PREMIUM)
+// DASHBOARD — CLEAN & PREMIUM
 app.get("/", (req, res) => {
   const uptime = Math.floor((Date.now() - stats.startTime) / 1000);
   const h = String(Math.floor(uptime / 3600)).padStart(2, "0");
@@ -56,7 +55,7 @@ app.get("/", (req, res) => {
     .out{color:#60a5fa}
     footer{text-align:center;padding:2rem;color:#64748b;font-size:0.88rem}
   </style></head><body>
-  <div class="header"><h1 class="logo">BlackLab Systems</h1><p>Enterprise WhatsApp Bot • Live Panel</p></div>
+  <div class="header"><h1 class="logo">BlackLab Systems</h1><p>Live Control Panel • One-Message Design</p></div>
   <div class="container">
     <div class="grid">
       <div class="stat">Incoming<div class="num">${stats.received}</div><div class="label">Messages</div></div>
@@ -96,63 +95,66 @@ app.get("/webhook", (req, res) => {
   res.sendStatus(403);
 });
 
-// SEND WITH HEADER IMAGE (PROFESSIONAL)
-const sendWithImage = async (to, payload, imageUrl = "https://i.imgur.com/8Qz8KZm.jpeg") => {
+// YOUR IMAGE (ONE MESSAGE WITH IMAGE + TEXT + BUTTONS)
+const YOUR_IMAGE = "https://i.imgur.com/elSEhEg.jpeg";
+
+// SEND ONE PROFESSIONAL MESSAGE (IMAGE + TEXT + BUTTONS)
+const send = async (to, payload) => {
   const start = Date.now();
   try {
-    // Send header image
-    await axios.post("https://graph.facebook.com/v20.0/" + PHONE_NUMBER_ID + "/messages", {
-      messaging_product: "whatsapp", to, type: "image",
-      image: { link: imageUrl }
-    }, { headers: { Authorization: "Bearer " + WA_TOKEN } });
+    const fullPayload = {
+      messaging_product: "whatsapp",
+      to,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        header: {
+          type: "image",
+          image: { link: YOUR_IMAGE }
+        },
+        ...payload.interactive
+      }
+    };
 
-    await new Promise(r => setTimeout(r, 900));
-
-    // Send actual message
-    await axios.post("https://graph.facebook.com/v20.0/" + PHONE_NUMBER_ID + "/messages", payload, {
+    await axios.post("https://graph.facebook.com/v20.0/" + PHONE_NUMBER_ID + "/messages", fullPayload, {
       headers: { Authorization: "Bearer " + WA_TOKEN }
     });
 
     const duration = Date.now() - start;
-    stats.sent += 2;
-    stats.avgResponse = Math.round((stats.avgResponse * (stats.sent - 2) + duration) / stats.sent);
-    log("out", to, "Image + " + (payload.text?.body || payload.interactive?.type || "Menu"));
+    stats.sent++;
+    stats.avgResponse = Math.round((stats.avgResponse * (stats.sent - 1) + duration) / stats.sent);
+    log("out", to, "Image+Buttons Message");
   } catch (e) {
     log("out", "", "ERROR: " + (e.response?.data?.error?.message || e.message));
   }
 };
 
-// MENUS
-const mainMenu = (to) => sendWithImage(to, {
-  messaging_product: "whatsapp", to,
-  type: "interactive", interactive: {
-    type: "button",
-    body: { text: "Welcome to *BlackLab Systems*\nKenya's #1 Instant Data Vendor\n\nWhat would you like to do?" },
-    footer: { text: "BlackLab • 24/7" },
+// MENUS — ALL USE ONE MESSAGE WITH YOUR IMAGE
+const mainMenu = (to) => send(to, {
+  interactive: {
+    body: { text: "Welcome to *BlackLab Systems*\nKenya's #1 Instant Data Vendor\n\nWhat would you like to do today?" },
+    footer: { text: "BlackLab • Always Instant • 24/7" },
     action: { buttons: [
       { type: "reply", reply: { id: "packages", title: "See Packages" } },
       { type: "reply", reply: { id: "about", title: "About Us" } },
       { type: "reply", reply: { id: "contact", title: "Contact Us" } }
     ]}
   }
-}, "https://i.imgur.com/elSEhEg.jpeg");
+});
 
-const packageTypes = (to) => sendWithImage(to, {
-  messaging_product: "whatsapp", to,
-  type: "interactive", interactive: {
-    type: "button",
-    body: { text: "Choose package type:" },
+const packageTypes = (to) => send(to, {
+  interactive: {
+    body: { text: "Choose package category:" },
     action: { buttons: [
       { type: "reply", reply: { id: "data", title: "Data Bundles" } },
       { type: "reply", reply: { id: "minutes", title: "Voice Minutes" } },
       { type: "reply", reply: { id: "sms", title: "SMS Bundles" } }
     ]}
   }
-}, "https://i.imgur.com/elSEhEg.jpeg");
+});
 
-const dataList = (to) => sendWithImage(to, {
-  messaging_product: "whatsapp", to,
-  type: "interactive", interactive: {
+const dataBundles = (to) => send(to, {
+  interactive: {
     type: "list",
     header: { type: "text", text: "Data Bundles" },
     body: { text: "Select your package:" },
@@ -165,23 +167,22 @@ const dataList = (to) => sendWithImage(to, {
       { id: "night", title: "Unlimited Night • KSh 49" }
     ]}]}
   }
-}, "https://i.imgur.com/elSEhEg.jpeg");
+});
 
-const aboutUs = (to) => sendWithImage(to, {
-  messaging_product: "whatsapp", to,
-  type: "interactive", interactive: {
-    type: "button",
-    body: { text: "*About BlackLab Systems*\n\nWe are Kenya's fastest and most trusted instant data vendor since 2024.\n\n• Over 1 Million bundles delivered\n• 100% automated system\n• Lowest prices in Kenya\n• Instant delivery (under 10 seconds)\n• 24/7 live support\n• Trusted by thousands daily\n• Official Safaricom partner\n\nThank you for choosing BlackLab — we keep Kenya connected!" },
+const aboutUs = (to) => send(to, {
+  interactive: {
+    body: { text: "*About BlackLab Systems*\n\nKenya's fastest & most trusted instant data vendor.\n\n• 1M+ bundles delivered\n• 100% automated\n• Lowest prices guaranteed\n• Instant delivery (under 10s)\n• 24/7 support\n• Official Safaricom partner\n\nThank you for choosing BlackLab" },
     footer: { text: "BlackLab Systems" },
     action: { buttons: [{ type: "reply", reply: { id: "main", title: "Back to Menu" } }] }
   }
-}, "https://i.imgur.com/elSEhEg.jpeg");
+});
 
-const contactUs = (to) => sendWithImage(to, {
-  messaging_product: "whatsapp", to,
-  type: "text",
-  text: { body: "*Contact BlackLab Systems*\n\nPhone: +254 712 345 678\nEmail: support@blacklab.co.ke\nWhatsApp: wa.me/254712345678\n\nWe reply in under 2 minutes!\n\nTap below to go back." }
-}, "https://i.imgur.com/3kL2m9P.jpeg").then(() => setTimeout(() => mainMenu(to), 8000));
+const contactUs = (to) => send(to, {
+  interactive: {
+    body: { text: "*Contact Us*\n\nPhone: +254 712 345 678\nEmail: support@blacklab.co.ke\nWhatsApp: wa.me/254712345678\n\nWe reply in under 2 minutes!" },
+    action: { buttons: [{ type: "reply", reply: { id: "main", title: "Back to Menu" } }] }
+  }
+});
 
 // WEBHOOK
 app.post("/webhook", async (req, res) => {
@@ -190,28 +191,24 @@ app.post("/webhook", async (req, res) => {
     for (const msg of messages) {
       if (processedIds.has(msg.id)) continue;
       processedIds.add(msg.id);
-      if (processedIds.size > 10000) processedIds.clear();
 
       const from = msg.from;
       const btn = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || "";
-      const text = msg.text?.body?.trim() || "";
 
       stats.received++;
-      log("in", from, text || btn || "media");
+      log("in", from, btn || "text/media");
 
       if (btn === "packages") { packageTypes(from); continue; }
       if (btn === "about") { aboutUs(from); continue; }
       if (btn === "contact") { contactUs(from); continue; }
       if (btn === "main") { mainMenu(from); continue; }
-      if (btn === "data") { dataList(from); continue; }
+      if (btn === "data") { dataBundles(from); continue; }
       if (btn === "minutes" || btn === "sms") {
-        sendWithImage(from, {messaging_product:"whatsapp",to:from,type:"text",text:{body:"This package is coming soon!"}});
+        send(from, { interactive: { body: { text: "This package is coming soon!" }, action: { buttons: [{ type: "reply", reply: { id: "main", title: "Back" } }] }}});
         continue;
       }
-
       if (btn) {
-        sendWithImage(from, {messaging_product:"whatsapp",to:from,type:"text",text:{body:"Bundle selected!\n\nM-Pesa STK Push coming in seconds.\nAccept to receive data instantly!"}});
-        setTimeout(() => mainMenu(from), 9000);
+        send(from, { interactive: { body: { text: "Bundle selected!\n\nM-Pesa STK Push coming in seconds.\nAccept to get data instantly!" }, action: { buttons: [{ type: "reply", reply: { id: "main", title: "Back to Menu" } }] }}});
         continue;
       }
 
@@ -226,6 +223,6 @@ app.post("/webhook", async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  log("out", "", "BlackLab Bot LIVE — With Header Images & Full Flow");
-  console.log("Go to your .onrender.com link");
+  log("out", "", "BlackLab Bot LIVE — ONE MESSAGE WITH IMAGE (Your Design)");
+  console.log("Deployed → https://" + (process.env.RENDER_EXTERNAL_HOSTNAME || "your-app.onrender.com"));
 });
