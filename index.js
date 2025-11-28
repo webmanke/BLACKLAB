@@ -135,7 +135,7 @@ const mainMenu = (to) => sendWithImage(to, {
       { type: "reply", reply: { id: "contact", title: "Contact Us" } }
     ]}
   }
-}, "https://i.imgur.com/8Qz8KZm.jpeg");
+}, "https://imgur.com/a/EvPf0Fs");
 
 const packageTypes = (to) => sendWithImage(to, {
   messaging_product: "whatsapp", to,
@@ -148,7 +148,7 @@ const packageTypes = (to) => sendWithImage(to, {
       { type: "reply", reply: { id: "sms", title: "SMS Bundles" } }
     ]}
   }
-}, "https://i.imgur.com/3kL2m9P.jpeg");
+}, "https://imgur.com/a/EvPf0Fs");
 
 const dataList = (to) => sendWithImage(to, {
   messaging_product: "whatsapp", to,
@@ -165,7 +165,7 @@ const dataList = (to) => sendWithImage(to, {
       { id: "night", title: "Unlimited Night • KSh 49" }
     ]}]}
   }
-}, "https://i.imgur.com/XwY5e9k.jpeg");
+}, "https://imgur.com/a/EvPf0Fs");
 
 const aboutUs = (to) => sendWithImage(to, {
   messaging_product: "whatsapp", to,
@@ -175,7 +175,7 @@ const aboutUs = (to) => sendWithImage(to, {
     footer: { text: "BlackLab Systems" },
     action: { buttons: [{ type: "reply", reply: { id: "main", title: "Back to Menu" } }] }
   }
-}, "https://i.imgur.com/8Qz8KZm.jpeg");
+}, "https://imgur.com/a/EvPf0Fs");
 
 const contactUs = (to) => sendWithImage(to, {
   messaging_product: "whatsapp", to,
