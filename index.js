@@ -10,15 +10,30 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
 const sessions = new Map();
 
-// === ROOT PAGE WITH NICE STYLING ===
+// === BEAUTIFUL LIVE STATUS + DOCUMENTATION PAGE ===
 app.get("/", (req, res) => {
   res.send(`
-    <body style="margin:0;height:100vh;background:linear-gradient(135deg,#000428,#004e92);color:white;font-family:Arial,sans-serif;display:flex;align-items:center;justify-content:center;flex-direction:column;">
-      <h1 style="font-size:3rem;margin-bottom:0;">BlackLab</h1>
-      <p style="font-size:1.5rem;margin:10px;">WhatsApp Bot is <span style="color:#00ff00;font-weight:bold;">LIVE & READY</span></p>
-      <p style="margin-top:30px;font-size:1.1rem;opacity:0.9;">built with ❤️ by blacklab tech</p>
-      <p style="position:absolute;bottom:20px;font-size:0.9rem;opacity:0.7;">Status: All systems operational</p>
-    </body>
+    <style>
+      body {margin:0;height:100vh;background:linear-gradient(135deg,#0f0f23,#1a1a3d);color:#fff;font-family:'Segoe UI',sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;}
+      .card {background:rgba(255,255,255,0.1);backdrop-filter:blur(10px);padding:40px 30px;border-radius:20px;border:1px solid rgba(255,255,255,0.2);max-width:500px;}
+      h1 {font-size:3.5rem;margin:0 0 10px;background:linear-gradient(90deg,#00ff88,#00d4ff); -webkit-background-clip:text; -webkit-text-fill-color:transparent;}
+      .status {color:#00ff00;font-weight:bold;}
+      .footer {margin-top:40px;font-size:1rem;opacity:0.8;}
+    </style>
+    <div class="card">
+      <h1>BlackLab</h1>
+      <p style="font-size:1.6rem;margin:10px 0;">WhatsApp Bot is <span class="status">LIVE & ACTIVE</span></p>
+      <p style="line-height:1.8;">
+        • Auto replies with interactive menus<br>
+        • M-Pesa STK Push integration ready<br>
+        • Supports unlimited data bundles via "More Bundles"<br>
+        • Built for scale & speed
+      </p>
+      <div class="footer">
+        BlackLab Systems © 2025<br>
+        <small>Powered by WhatsApp Cloud API + Node.js</small>
+      </div>
+    </div>
   `);
 });
 
@@ -27,104 +42,140 @@ app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
   const challenge = req.query["hub.challenge"];
-
   if (mode && token === VERIFY_TOKEN) return res.status(200).send(challenge);
   res.sendStatus(403);
 });
 
-// Send menu — now with MAX 3 buttons only!
-async function sendMenu(to, menuKey = "main") {
-  const menus = {
-    main: {
-      header: "BlackLab",
-      body: "Welcome to *BlackLab*!\n\nHow can we help you today?",
-      buttons: [
-        { id: "buy_bundle", title: "Buy Data Bundle" },
-        { id: "check_balance", title: "Check Balance" },
-        { id: "support", title: "Support / About" }, // merged two into one
-      ],
-    },
-    buy_bundle: {
-      header: "Data Bundles",
-      body: "Choose your bundle — valid 30 days",
-      buttons: [
-        { id: "bundle_1gb", title: "1GB → R29" },
-        { id: "bundle_5gb", title: "5GB → R99" },
-        { id: "back_main", title: "Back" },
-      ],
-    },
-  };
-
-  const menu = menus[menuKey] || menus.main;
-
+// Send interactive button (max 3)
+async function sendButton(to, header, body, buttons) {
   const data = {
     messaging_product: "whatsapp",
-    recipient_type: "individual",
     to,
     type: "interactive",
     interactive: {
       type: "button",
-      header: { type: "text", text: menu.header },
-      body: { text: menu.body },
-      footer: { text: "built with ❤️ by blacklab tech" },
+      header: { type: "text", text: header },
+      body: { text: body },
+      footer: { text: "BlackLab Systems" },
+      action: { buttons: buttons.map(b => ({ type: "reply", reply: { id: b.id, title: b.title } })) }
+    }
+  };
+  await axios.post(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, data, {
+    headers: { Authorization: `Bearer ${WA_TOKEN}` }
+  });
+}
+
+// Send List Message (up to 10 items
+async function sendListMenu(to) {
+  const data = {
+    messaging_product: "whatsapp",
+    to,
+    type: "interactive",
+    interactive: {
+      type: "list",
+      header: { type: "text", text: "All Data Bundles" },
+      body: { text: "Choose your preferred data package:" },
+      footer: { text: "BlackLab Systems" },
       action: {
-        buttons: menu.buttons.map(b => ({
-          type: "reply",
-          reply: { id: b.id, title: b.title }
-        }))
+        button: "View Bundles",
+        sections: [{
+          rows: [
+            { id: "bundle_1gb", title: "1GB", description: "KSh 29 · 30 days" },
+            { id: "bundle_3gb", title: "3GB", description: "KSh 69 · 30 days" },
+            { id: "bundle_5gb", title: "5GB", description: "KSh 99 · 30 days" },
+            { id: "bundle_10gb", title: "10GB", description: "KSh 179 · 30 days" },
+            { id: "bundle_20gb", title: "20GB", description: "KSh 329 · 30 days" },
+            { id: "bundle_unlimited", title: "Unlimited Night", description: "KSh 49 · 12am–6am" },
+          ]
+        }]
       }
     }
   };
-
-  try {
-    await axios.post(
-      `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`,
-      data,
-      { headers: { Authorization: `Bearer ${WA_TOKEN}` } }
-    );
-    console.log(`Menu "\( {menuKey}" sent to \){to}`);
-  } catch (error) {
-    console.error("Failed to send menu:", error.response?.data || error.message);
-  }
+  await axios.post(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, data, {
+    headers: { Authorization: `Bearer ${WA_TOKEN}` }
+  });
 }
 
-// Webhook handler
+// Main handler
 app.post("/webhook", async (req, res) => {
   try {
     const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
     const from = message?.from;
     if (!from) return res.sendStatus(200);
 
-    // Button reply
-    if (message?.interactive?.button_reply?.id) {
-      const id = message.interactive.button_reply.id;
+    const buttonId = message?.interactive?.button_reply?.id || message?.interactive?.list_reply?.id;
 
-      if (id === "buy_bundle") return await sendMenu(from, "buy_bundle");
-      if (id === "back_main") { sessions.delete(from); return await sendMenu(from, "main"); }
-      if (id.startsWith("bundle_")) {
-        const bundle = id.replace("bundle_", "").replace("_", " ").toUpperCase();
-        await axios.post(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
-          messaging_product: "whatsapp",
-          to: from,
-          type: "text",
-          text: { body: `You selected *${bundle}*!\n\nPayment details coming in a few seconds…\nThank you!` }
-        }, { headers: { Authorization: `Bearer ${WA_TOKEN}` } });
+    // === BUNDLE SELECTED (from list or button) ===
+    if (buttonId?.startsWith("bundle_")) {
+      const bundles = {
+        bundle_1gb: 29,
+        bundle_3gb: 69,
+        bundle_5gb: 99,
+        bundle_10gb: 179,
+        bundle_20gb: 329,
+        bundle_unlimited: 49
+      };
 
-        setTimeout(() => { sessions.delete(from); sendMenu(from, "main"); }, 4000);
-        return res.sendStatus(200);
-      }
+      const amount = bundles[buttonId];
+      const name = buttonId.replace("bundle_", "").replace("_", " ").toUpperCase();
+
+      await axios.post(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+        messaging_product: "whatsapp",
+        to: from,
+        type: "text",
+        text: {
+          body: `You selected *\( {name}* for *KSh \){amount}*\n\nYou will receive an M-Pesa STK Push shortly.\n\nPlease accept the prompt on your phone to complete purchase.\n\nThank you for choosing BlackLab!`
+        }
+      }, { headers: { Authorization: `Bearer ${WA_TOKEN}` } });
+
+      // Clean return to main menu after 6 seconds
+      setTimeout(async () => {
+        sessions.delete(from);
+        await sendButton(from, "BlackLab", "Welcome back! How can we help you today?", [
+          { id: "buy_bundle", title: "Buy Data" },
+          { id: "check_balance", title: "Check Balance" },
+          { id: "support", title: "Support" }
+        ]);
+      }, 6000);
+
+      return res.sendStatus(200);
     }
 
-    // Any other message → main menu
+    // === BUTTON CLICKS ===
+    if (buttonId === "buy_bundle" || buttonId === "more_bundles") {
+      sessions.set(from, "browsing_bundles");
+      return await sendListMenu(from);
+    }
+
+    if (buttonId === "about") {
+      await axios.post(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, {
+        messaging_product: "whatsapp",
+        to: from,
+        type: "text",
+        text: { body: "*BlackLab Systems*\n\nKenya's fastest growing data vendor.\n\n• Instant delivery\n• 24/7 support\n• Best prices guaranteed\n\nWe run on trust & speed." }
+      }, { headers: { Authorization: `Bearer ${WA_TOKEN}` } });
+      setTimeout(() => sendMainMenu(from), 5000);
+      return res.sendStatus(200);
+    }
+
+    // === DEFAULT: Show main menu ===
     sessions.delete(from);
-    await sendMenu(from, "main");
+    await sendMainMenu(from);
 
     res.sendStatus(200);
   } catch (err) {
-    console.error(err);
+    console.error(err.response?.data || err.message);
     res.sendStatus(500);
   }
 });
 
+async function sendMainMenu(to) {
+  await sendButton(to, "BlackLab", "Welcome to *BlackLab*!\n\nChoose an option:", [
+    { id: "buy_bundle", title: "Buy Data" },
+    { id: "more_bundles", title: "More Bundles" },
+    { id: "about", title: "About Us" }
+  ]);
+}
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`BlackLab Bot LIVE on port ${PORT}`));
+app.listen(PORT, () => console.log(`BlackLab Bot running smoothly on port ${PORT}`));
