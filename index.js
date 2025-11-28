@@ -4,12 +4,12 @@ const axios = require("axios");
 const app = express();
 app.use(express.json());
 
-// Load environment variables
-const VERIFY_TOKEN = process.env.verify_token;
-const WA_TOKEN = process.env.wa_token;
-const PHONE_NUMBER_ID = process.env.phone_number_id;
+// environment variables (UPPERCASE)
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const WA_TOKEN = process.env.WA_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
-// Webhook Verification
+// Webhook verification
 app.get("/webhook", (req, res) => {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
@@ -22,36 +22,29 @@ app.get("/webhook", (req, res) => {
     }
 });
 
-// Handle incoming messages
+// Incoming messages
 app.post("/webhook", async (req, res) => {
     try {
-        const body = req.body;
+        const message = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
 
-        if (body.object) {
-            const entry = body.entry?.[0];
-            const changes = entry.changes?.[0];
-            const message = changes.value.messages?.[0];
-
-            if (message && message.from) {
-                const from = message.from;
-                await sendInteractiveButtons(from);
-            }
+        if (message && message.from) {
+            await sendInteractiveButtons(message.from);
         }
 
         res.sendStatus(200);
-    } catch (e) {
-        console.error("Webhook Error:", e.message);
+    } catch (err) {
+        console.error("Webhook error:", err.message);
         res.sendStatus(500);
     }
 });
 
-// Function to send interactive buttons
+// Send interactive buttons
 async function sendInteractiveButtons(to) {
     const url = `https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`;
 
     const data = {
         messaging_product: "whatsapp",
-        to: to,
+        to,
         type: "interactive",
         interactive: {
             type: "button",
@@ -87,16 +80,16 @@ async function sendInteractiveButtons(to) {
             }
         });
 
-        console.log("Interactive buttons sent to:", to);
+        console.log("Interactive message sent to:", to);
     } catch (error) {
         console.error("Error sending interactive message:", error.response?.data || error.message);
     }
 }
 
-// Home route
+// Home
 app.get("/", (req, res) => {
-    res.send("BlackLab WhatsApp bot is running with ENV variables + interactive buttons!");
+    res.send("BlackLab WhatsApp Bot running with UPPERCASE env variables!");
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server started on port ${PORT}`));
+app.listen(PORT, () => console.log("Server started on port " + PORT));
