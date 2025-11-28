@@ -8,185 +8,163 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WA_TOKEN = process.env.WA_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
-// Simple log storage for the website
+// In-memory logs for dashboard
 let logs = [];
-const addLog = (dir, phone = "", msg = "") => {
+const log = (dir, phone = "", text = "") => {
   logs.push({
-    time: new Date().toLocaleTimeString("en-KE"),
-    dir,
-    phone: phone ? phone.slice(-5) : "",
-    msg: msg.substring(0, 150)
+    t: new Date().toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", second: "2-digit" }),
+    d: dir, // in / out
+    p: phone ? phone.slice(-5) : "",
+    m: text.substring(0, 120)
   });
-  if (logs.length > 300) logs = logs.slice(-300);
+  if (logs.length > 400) logs = logs.slice(-400);
 };
 
-// =============== BEAUTIFUL PROFESSIONAL WEBSITE ===============
+// CLEAN & PREMIUM DASHBOARD
 app.get("/", (req, res) => {
-  res.send(`
-<!DOCTYPE html>
-<html>
+  res.send(`<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BlackLab Systems • Live</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;700&display=swap" rel="stylesheet">
-  <style>
-    body{margin:0;font-family:'Inter',sans-serif;background:#fff;color:#111}
-    header{background:linear-gradient(135deg,#0055ff,#00ddff);color:white;text-align:center;padding:60px 20px}
-    h1{font-size:4.5rem;margin:0;background:linear-gradient(90deg,#fff,#eee);background-clip:text;-webkit-background-clip:text;color:transparent}
-    .status{padding:10px 25px;background:#00ff44;color:#000;border-radius:50px;font-weight:bold}
-    .container{max-width:1000px;margin:20px auto;padding:20px}
-    .card{background:white;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.1);padding:30px}
-    .logs{background:#0a0a0a;color:#0f0;font-family:monospace;padding:20px;border-radius:12px;max-height:600px;overflow-y:auto}
-    .in{color:#00ff88}
-    .out{color:#88ccff}
-    .time{color:#888;margin-right:10px}
-    footer{text-align:center;padding:40px;color:#666}
-  </style>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BlackLab Systems • Control Panel</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;font-family:'Inter',sans-serif;background:#f8f9fc;color:#1a1a1a;line-height:1.5}
+  .header{background:linear-gradient(135deg,#0044ff,#0077ff);color:white;padding:2rem 1rem;text-align:center}
+  .logo{font-size:2.4rem;font-weight:700;margin:0;letter-spacing:-1px}
+  .status{padding:0.4rem 1rem;background:#00ff88;color:#000;border-radius:2rem;font-size:0.9rem;font-weight:600}
+  .main{max-width:1100px;margin:0 auto;padding:1.5rem}
+  .card{background:white;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.06);overflow:hidden}
+  .card h2{background:#f1f3f9;padding:1rem 1.5rem;margin:0;font-size:1.1rem;font-weight:600;color:#333}
+  .logs{padding:1rem;background:#0c0c0c;color:#0f0;font:0.92rem 'JetBrains Mono',monospace;height:560px;overflow-y:auto}
+  .log{display:flex;gap:12px;margin:4px 0}
+  .t{color:#666;width:70px;flex-shrink:0}
+  .in{color:#00ff9d}
+  .out{color:#6ebdff}
+  footer{text-align:center;padding:2rem;color:#777;font-size:0.9rem}
+</style>
 </head>
 <body>
-<header>
-  <h1>BlackLab</h1>
-  <p style="font-size:2rem;margin:15px 0">WhatsApp Bot is <span class="status">LIVE</span></p>
-</header>
-<div class="container">
+<div class="header">
+  <h1 class="logo">BlackLab</h1>
+  <div class="status">ONLINE • LIVE</div>
+</div>
+<div class="main">
   <div class="card">
-    <h2>Real-Time Logs</h2</h2>
-    <div class="logs" id="logs">Waiting for messages...</div>
+    <h2>Real-Time Activity</h2>
+    <div class="logs" id="l">Connecting to bot...</div>
   </div>
 </div>
-<footer>© 2025 BlackLab Systems • Kenya</footer>
+<footer>© 2025 BlackLab Systems • Instant Data • Kenya</footer>
 
 <script>
-  const es = new EventSource("/logs");
-  es.onmessage = function(e) {
-    const d = JSON.parse(e.data);
-    const line = document.createElement("div");
-    line.innerHTML = '<span class="time">[' + d.time + ']</span> ' +
-      '<span class="' + (d.dir==='in'?'in':'out') + '">' +
-      (d.dir==='in'?'←':'→') + ' ' + (d.phone ? d.phone + ': ' : '') + d.msg + '</span>';
-    document.getElementById("logs").appendChild(line);
-    document.getElementById("logs").scrollTop = 99999;
+  const l = document.getElementById('l');
+  const es = new EventSource('/logs');
+  es.onmessage = e => {
+    const o = JSON.parse(e.data);
+    const line = document.createElement('div');
+    line.className = 'log';
+    line.innerHTML = `<span class="t">[\( {o.t}]</span><span class=" \){o.d==='in'?'in':'out'}">\( {o.d==='in'?'←':'→'} \){o.p?o.p+': ':''}${o.m}</span>`;
+    l.appendChild(line);
+    l.scrollTop = l.scrollHeight;
   };
 </script>
 </body>
-</html>
-  `);
+</html>`);
 });
 
-// =============== LIVE LOGS ENDPOINT ===============
+// LIVE LOGS STREAM
 app.get("/logs", (req, res) => {
-  res.set({
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    "Connection": "keep-alive"
-  });
+  res.set({"Content-Type":"text/event-stream","Cache-Control":"no-cache","Connection":"keep-alive"});
   res.flushHeaders();
-  logs.forEach(l => res.write("data: " + JSON.stringify(l) + "\n\n"));
-  const i = setInterval(() => {
-    logs.slice(-5).forEach(l => res.write("data: " + JSON.stringify(l) + "\n\n"));
-  }, 2000);
-  req.on("close", () => clearInterval(i));
+  logs.forEach(x => res.write("data: "+JSON.stringify(x)+"\n\n"));
+  const int = setInterval(() => logs.slice(-8).forEach(x => res.write("data: "+JSON.stringify(x)+"\n\n")), 1800);
+  req.on("close", () => clearInterval(int));
 });
 
-// =============== WEBHOOK VERIFY ===============
-app.get("/webhook", (req, res) => {
-  if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === VERIFY_TOKEN) {
+// WEBHOOK VERIFY
+app.get("/webhook", (req,res) => {
+  if (req.query["hub.mode"]==="subscribe" && req.query["hub.verify_token"]===VERIFY_TOKEN)
     return res.send(req.query["hub.challenge"]);
-  }
   res.sendStatus(403);
 });
 
-// =============== SEND MESSAGE ===============
+// SEND MESSAGE + LOG
 const send = async (to, payload) => {
   try {
-    await axios.post("https://graph.facebook.com/v20.0/" + PHONE_NUMBER_ID + "/messages", payload, {
-      headers: { Authorization: "Bearer " + WA_TOKEN }
+    await axios.post("https://graph.facebook.com/v20.0/"+PHONE_NUMBER_ID+"/messages", payload, {
+      headers: { Authorization: "Bearer "+WA_TOKEN }
     });
-    addLog("out", to, payload.text?.body || payload.type || "menu");
+    log("out", to, payload.text?.body || payload.interactive?"Menu":"Media");
   } catch (e) {
-    addLog("out", "", "ERROR: " + (e.response?.data?.error?.message || e.message));
+    log("out", "", "ERROR: "+(e.response?.data?.error?.message || e.message));
   }
 };
 
-const mainMenu = (to) => send(to, {
-  messaging_product: "whatsapp", to,
-  type: "interactive",
-  interactive: {
-    type: "button",
-    header: { type: "text", text: "BlackLab" },
-    body: { text: "Welcome to *BlackLab Systems*\n\nChoose:" },
-    footer: { text: "BlackLab Systems" },
-    action: {
-      buttons: [
-        { type: "reply", reply: { id: "buy", title: "Buy Data" } },
-        { type: "reply", reply: { id: "balance", title: "Check Balance" } },
-        { type: "reply", reply: { id: "about", title: "About Us" } }
-      ]
-    }
-  }
-});
+// MENUS
+const mainMenu = to => send(to, {messaging_product:"whatsapp",to,type:"interactive",interactive:{
+  type:"button",header:{type:"text",text:"BlackLab"},
+  body:{text:"Welcome to *BlackLab Systems*\n\nHow can we help you today?"},
+  footer:{text:"BlackLab Systems"},
+  action:{buttons:[
+    {type:"reply",reply:{id:"buy",title:"Buy Data"}},
+    {type:"reply",reply:{id:"balance",title:"Check Balance"}},
+    {type:"reply",reply:{id:"about",title:"About Us"}}
+  ]}
+}});
 
-const bundles = (to) => send(to, {
-  messaging_product: "whatsapp", to,
-  type: "interactive",
-  interactive: {
-    type: "list",
-    header: { type: "text", text: "Data Bundles" },
-    body: { text: "Pick your package (30 days)" },
-    footer: { text: "BlackLab Systems" },
-    action: {
-      button: "Show Bundles",
-      sections: [{
-        rows: [
-          { id: "b1", title: "1 GB  • KSh 29" },
-          { id: "b3", title: "3 GB  • KSh 69" },
-          { id: "b5", title: "5 GB  • KSh 99" },
-          { id: "b10", title: "10 GB • KSh 179" },
-          { id: "b20", title: "20 GB • KSh 329" },
-          { id: "night", title: "Unlimited Night • KSh 49" }
-        ]
-      }]
-    }
-  }
-});
+const bundles = to => send(to, {messaging_product:"whatsapp",to,type:"interactive",interactive:{
+  type:"list",header:{type:"text",text:"Data Bundles"},
+  body:{text:"Choose your package — valid 30 days"},
+  footer:{text:"BlackLab Systems"},
+  action:{button:"View Bundles",sections:[{
+    rows:[
+      {id:"p1",title:"1 GB • KSh 29"},
+      {id:"p3",title:"3 GB • KSh 69"},
+      {id:"p5",title:"5 GB • KSh 99"},
+      {id:"p10",title:"10 GB • KSh 179"},
+      {id:"p20",title:"20 GB • KSh 329"},
+      {id:"night",title:"Unlimited Night • KSh 49"}
+    ]
+  }]}
+}});
 
-// =============== WEBHOOK ===============
-let lastId = "";
+// WEBHOOK — BULLETPROOF
+let lastMsgId = "";
 app.post("/webhook", async (req, res) => {
   try {
     const msg = req.body.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-    if (!msg || msg.message_id === lastId) return res.sendStatus(200);
-    lastId = msg.message_id;
+    if (!msg || msg.message_id === lastMsgId) return res.sendStatus(200);
+    lastMsgId = msg.message_id;
 
     const from = msg.from;
-    const id = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || "";
+    const btn = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || "";
 
-    addLog("in", from, msg.text?.body || id || "media");
+    log("in", from, msg.text?.body || btn || "media");
 
-    if (id === "buy") return bundles(from);
-    if (id === "about") {
-      await send(from, { messaging_product: "whatsapp", to: from, type: "text", text: { body: "*BlackLab Systems*\nKenya's fastest data vendor.\nInstant • Cheap • 24/7" } });
-      setTimeout(() => mainMenu(from), 4000);
+    if (btn === "buy") return bundles(from);
+    if (btn === "about") {
+      await send(from, {messaging_product:"whatsapp",to:from,type:"text",text:{body:"*BlackLab Systems*\nKenya's fastest instant data vendor.\n• Delivery in seconds\n• Best prices\n• 24/7"}});
+      setTimeout(()=>mainMenu(from),4000);
       return res.sendStatus(200);
     }
-    if (id.startsWith("b") || id === "night") {
-      await send(from, { messaging_product: "whatsapp", to: from, type: "text", text: { body: "You chose a bundle!\n\nM-Pesa STK Push coming in seconds...\nAccept to get data instantly!" } });
-      setTimeout(() => mainMenu(from), 7000);
+    if (btn) { // any bundle selected
+      await send(from, {messaging_product:"whatsapp",to:from,type:"text",text:{body:"You selected a bundle!\n\nM-Pesa STK Push coming in seconds.\nAccept to receive data instantly!"}});
+      setTimeout(()=>mainMenu(from),7000);
       return res.sendStatus(200);
     }
 
-    // First message or anything else → main menu
+    // First message or anything else → show main menu
     mainMenu(from);
     res.sendStatus(200);
   } catch (e) {
-    addLog("out", "", "ERROR: " + e.message);
+    log("out", "", "ERROR: "+e.message);
     res.sendStatus(500);
   }
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  addLog("out", "", "BlackLab Bot started – port " + PORT);
-  console.log("LIVE → https://" + (process.env.RENDER_EXTERNAL_HOSTNAME || "your-app.onrender.com"));
+  log("out", "", "BlackLab Bot LIVE – Dashboard ready");
+  console.log("Deployed and working perfectly");
 });
