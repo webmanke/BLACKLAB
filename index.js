@@ -108,15 +108,15 @@ app.get("/", async (req, res) => {
       <td>${new Date(o.timestamp).toLocaleString()}</td>
       <td>${o.phone}</td>
       <td>${o.mpesa || "-"}</td>
-      <td>${o.package}</td>
+      <td>${o.package || "N/A"}</td>
       <td><span style="color:#f59e0b;font-weight:600">${o.status}</span></td>
     </tr>
-  `).join('') : '<tr><td colspan="5"><td style="text-align:center;color:#888">No orders yet</td></tr>';
+  `).join('') : '<tr><td colspan="5" style="text-align:center;color:#888">No orders yet</td></tr>';
 
   const userList = users.length ? await Promise.all(users.map(async u => {
     const [inCount, outCount] = await Promise.all([
-      new Promise(r => db.get("SELECT COUNT(*) c FROM messages WHERE phone=? AND direction='in'", [u.phone], (_, x) => r(x.c))),
-      new Promise(r => db.get("SELECT COUNT(*) c FROM messages WHERE phone=? AND direction='out'", [u.phone], (_, x) => r(x.c)))
+      new Promise(r => db.get("SELECT COUNT(*) c FROM messages WHERE phone=? AND direction='in'", [u.phone], (_, x) => r(x?.c || 0))),
+      new Promise(r => db.get("SELECT COUNT(*) c FROM messages WHERE phone=? AND direction='out'", [u.phone], (_, x) => r(x?.c || 0)))
     ]);
     return `<div class="user"><strong>\( {u.phone}</strong> <span>In: \){inCount} | Out: ${outCount}</span></div>`;
   })).then(arr => arr.join('')) : '<p style="color:#888;text-align:center">No users yet</p>';
@@ -165,65 +165,67 @@ app.get("/", async (req, res) => {
 
 <div class="card">
   <h3>Send Custom Message</h3>
-  <input type="text" id="phone" placeholder="Phone (optional)">
+  <input type="text" id="phone" placeholder="Phone number (leave empty for all)">
   <textarea id="text" rows="4" placeholder="Your message..."></textarea>
-  <input type="text" id="b1" placeholder="Button 1">
-  <input type="text" id="b2" placeholder="Button 2">
-  <button onclick="sendMsg()">SEND</button>
+  <input type="text" id="b1" placeholder="Button 1 text">
+  <input type="text" id="b2" placeholder="Button 2 text">
+  <button onclick="sendMsg()">SEND MESSAGE</button>
 </div>
 
 <div class="card">
   <h3>Packages</h3>
-  <table>${packageRows}</table>
+  <table><tr><th>Category</th><th>Title</th><th>Price</th><th>Action</th></tr>${packageRows}</table>
   <div style="margin-top:20px;display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:12px">
     <select id="cat"><option>data</option><option>minutes</option><option>sms</option></select>
     <input id="title" placeholder="Title">
     <input id="price" type="number" placeholder="Price">
-    <button onclick="addPkg()">ADD</button>
+    <button onclick="addPkg()">ADD PACKAGE</button>
   </div>
 </div>
 
-<div class="card"><h3>Recent Orders</h3><table>${orderRows}</table></div>
+<div class="card"><h3>Recent Orders</h3><table><tr><th>Time</th><th>Phone</th><th>M-Pesa</th><th>Package</th><th>Status</th></tr>${orderRows}</table></div>
 <div class="card"><h3>User Activity</h3>${userList}</div>
 
 </div>
 
 <script>
 async function broadcast(){
-  const text = document.getElementById('btext').value;
-  if(!text) return alert("Write something");
+  const text = document.getElementById('btext').value.trim();
+  if(!text) return alert("Write a message");
   await fetch('/broadcast',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
   alert("Broadcast sent to all users!");
+  document.getElementById('btext').value = '';
 }
 async function sendMsg(){
-  const to = document.getElementById('phone').value || null;
-  const text = document.getElementById('text').value;
-  const b1 = document.getElementById('b1').value || null;
-  const b2 = document.getElementById('b2').value || null;
+  const to = document.getElementById('phone').value.trim() || null;
+  const text = document.getElementById('text').value.trim();
+  const b1 = document.getElementById('b1').value.trim() || null;
+  const b2 = document.getElementById('b2').value.trim() || null;
   if(!text) return alert("Message required");
   await fetch('/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to,text,btn1:b1,btn2:b2})});
   alert("Message sent!");
+  document.getElementById('text').value = '';
 }
 async function addPkg(){
   const cat = document.getElementById('cat').value;
-  const title = document.getElementById('title').value;
+  const title = document.getElementById('title').value.trim();
   const price = document.getElementById('price').value;
-  if(!title || !price) return alert("Fill all");
+  if(!title || !price) return alert("Fill all fields");
   await fetch('/package',{method:'POST',body:new URLSearchParams({cat,title,price})});
   location.reload();
 }
 async function delPkg(id){
-  if(confirm("Delete package?")) {
+  if(confirm("Delete this package?")) {
     await fetch('/package/'+id,{method:'DELETE'});
     location.reload();
   }
 }
-setInterval(()=>location.reload(), 300000);
+setInterval(() => location.reload(), 300000); // refresh every 5 min
 </script>
 </body></html>`);
 });
 
-// ADMIN ENDPOINTS
+// ADMIN ENDPOINTS — FIXED THE BUG HERE
 app.post("/broadcast", async (req, res) => {
   const { text } = req.body;
   const users = await new Promise(r => db.all("SELECT DISTINCT phone FROM messages WHERE phone IS NOT NULL", (_, rows) => r(rows.map(x => x.phone))));
@@ -234,8 +236,8 @@ app.post("/broadcast", async (req, res) => {
 app.post("/send", async (req, res) => {
   let { to, text, btn1, btn2 } = req.body;
   const buttons = [];
-  if (btn1) buttons.push({type:"reply",reply:{id:"c1",title:btn1}});
-  if (btn2 && buttons.push({type:"reply",reply:{id:"c2",title:btn2}});
+  if (btn1) buttons.push({ type: "reply", reply: { id: "c1", title: btn1 } });
+  if (btn2) buttons.push({ type: "reply", reply: { id: "c2", title: btn2 } });
 
   const targets = to ? [to] : await new Promise(r => db.all("SELECT DISTINCT phone FROM messages WHERE phone IS NOT NULL", (_, rows) => r(rows.map(x => x.phone))));
   for (const p of targets) await send(p, { body: text, buttons });
@@ -257,8 +259,8 @@ app.delete("/package/:id", (req, res) => {
 const mainMenu = (to) => send(to, {
   body: "*Welcome to BlackLab Systems*\nKenya's #1 Instant Data Vendor\n\nChoose an option:",
   buttons: [
-    {type:"reply",reply:{id:"packages",title:"See Packages"}},
-    {type:"reply",reply:{id:"about",title:"About Us"}}
+    { type: "reply", reply: { id: "packages", title: "See Packages" } },
+    { type: "reply", reply: { id: "about", title: "About Us" } }
   ]
 });
 
@@ -279,9 +281,9 @@ app.post("/webhook", async (req, res) => {
         send(from, {
           body: "Select package type:",
           buttons: [
-            {type:"reply",reply:{id:"cat_data",title:"Data Bundles"}},
-            {type:"reply",reply:{id:"cat_minutes",title:"Voice Minutes"}},
-            {type:"reply",reply:{id:"cat_sms",title:"SMS Bundles"}}
+            { type: "reply", reply: { id: "cat_data", title: "Data Bundles" } },
+            { type: "reply", reply: { id: "cat_minutes", title: "Voice Minutes" } },
+            { type: "reply", reply: { id: "cat_sms", title: "SMS Bundles" } }
           ]
         });
         continue;
@@ -303,4 +305,4 @@ app.get("/webhook", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("BLACKLAB GOD MODE IS FULLY LIVE"));
+app.listen(PORT, () => console.log("BLACKLAB IS NOW UNSTOPPABLE"));
