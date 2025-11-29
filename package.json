@@ -1,7 +1,7 @@
 {
   "name": "blacklab-empire",
   "version": "1.0.0",
-  "description": "Kenya's #1 Instant Vendor Bot",
+  "description": "Kenya's #1 Instant WhatsApp Vendor",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
