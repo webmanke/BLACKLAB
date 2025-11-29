@@ -1,0 +1,16 @@
+{
+  "name": "blacklab-empire",
+  "version": "1.0.0",
+  "description": "Kenya's #1 Instant Vendor Bot",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "axios": "^1.7.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
