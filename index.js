@@ -13,257 +13,149 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const db = new sqlite3.Database("./blacklab.db");
 
 db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    phone TEXT,
-    direction TEXT,
-    content TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    phone TEXT,
-    mpesa TEXT,
-    package TEXT,
-    status TEXT DEFAULT 'pending',
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-  db.run(`CREATE TABLE IF NOT EXISTS packages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    category TEXT,
-    title TEXT,
-    price INTEGER
-  )`);
+  db.run(`CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, direction TEXT, content TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+  db.run(`CREATE TABLE IF NOT EXISTS orders (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, mpesa TEXT, recipient TEXT, package TEXT, status TEXT DEFAULT 'pending', timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)`);
+  db.run(`CREATE TABLE IF NOT EXISTS packages (id INTEGER PRIMARY KEY AUTOINCREMENT, category TEXT, title TEXT, price INTEGER)`);
 
   // Default packages
-  const defaultPkgs = [
-    ["data", "1GB Daily", 29],
-    ["data", "3GB Weekly", 69],
-    ["data", "10GB Monthly", 179],
-    ["data", "Unlimited Night", 49],
-    ["minutes", "100 Minutes", 50],
-    ["sms", "500 SMS", 30]
+  const pkgs = [
+    ["data", "1GB • 24hrs", 29], ["data", "3GB • 7 Days", 69], ["data", "10GB • 30 Days", 179], ["data", "Unlimited Night", 49],
+    ["minutes", "100 Minutes", 50], ["sms", "500 SMS", 30]
   ];
   const stmt = db.prepare("INSERT OR IGNORE INTO packages (category, title, price) VALUES (?, ?, ?)");
-  defaultPkgs.forEach(p => stmt.run(p));
+  pkgs.forEach(p => stmt.run(p));
   stmt.finalize();
 });
 
 let stats = { received: 0, sent: 0, startTime: Date.now() };
 const processed = new Set();
+const sessions = new Map();
 const HEADER_IMG = "https://i.imgur.com/elSEhEg.jpeg";
-const FOOTER_TEXT = "BlackLab Systems • Instant • Trusted • 24/7";
+const FOOTER = "BlackLab Systems • Instant Delivery • 24/7";
 
-// UNIVERSAL SEND FUNCTION — IMAGE + TEXT + BUTTONS + FOOTER
+// UNIVERSAL SEND
 const send = async (to, { body, buttons = [] }) => {
   try {
     const payload = {
-      messaging_product: "whatsapp",
-      to,
+      messaging_product: "whatsapp", to,
       type: "interactive",
       interactive: {
         type: "button",
         header: { type: "image", image: { link: HEADER_IMG } },
         body: { text: body },
-        footer: { text: FOOTER_TEXT },
+        footer: { text: FOOTER },
         action: { buttons }
       }
     };
-
-    await axios.post(`https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`, payload, {
-      headers: { Authorization: `Bearer ${WA_TOKEN}` }
-    });
-
+    await axios.post(`https://graph.facebook.com/v20.0/\( {PHONE_NUMBER_ID}/messages`, payload, { headers: { Authorization: `Bearer \){WA_TOKEN}` } });
     stats.sent++;
-    db.run("INSERT INTO messages (phone,direction,content) VALUES (?,?,?)", [to, "out", body]);
-  } catch (e) {
-    console.error("Send failed:", e.response?.data || e.message);
-  }
+    db.run("INSERT INTO messages (phone,direction,content) VALUES (?,?,?)", [to, "out", body.split("\n")[0]]);
+  } catch (e) { console.error("Send error:", e.message); }
 };
 
-// MAIN DASHBOARD — GOD MODE
-app.get("/", async (req, res) => {
-  const uptime = Math.floor((Date.now() - stats.startTime) / 1000);
-  const h = String(Math.floor(uptime / 3600)).padStart(2, "0");
-  const m = String(Math.floor((uptime % 3600) / 60)).padStart(2, "0");
-  const s = String(uptime % 60).padStart(2, "0");
-
-  const [users, orders, packages] = await Promise.all([
-    new Promise(r => db.all("SELECT DISTINCT phone FROM messages WHERE phone IS NOT NULL ORDER BY timestamp DESC LIMIT 50", (_, rows) => r(rows))),
-    new Promise(r => db.all("SELECT * FROM orders ORDER BY id DESC LIMIT 20", (_, rows) => r(rows))),
-    new Promise(r => db.all("SELECT * FROM packages ORDER BY category, price", (_, rows) => r(rows)))
-  ]);
-
-  const packageRows = packages.length ? packages.map(p => `
-    <tr>
-      <td>${p.category.toUpperCase()}</td>
-      <td>${p.title}</td>
-      <td>KSh ${p.price}</td>
-      <td><button class="del" onclick="delPkg(${p.id})">Delete</button></td>
-    </tr>
-  `).join('') : '<tr><td colspan="4" style="text-align:center;color:#888">No packages yet</td></tr>';
-
-  const orderRows = orders.length ? orders.map(o => `
-    <tr>
-      <td>${new Date(o.timestamp).toLocaleString()}</td>
-      <td>${o.phone}</td>
-      <td>${o.mpesa || "-"}</td>
-      <td>${o.package || "N/A"}</td>
-      <td><span style="color:#f59e0b;font-weight:600">${o.status}</span></td>
-    </tr>
-  `).join('') : '<tr><td colspan="5" style="text-align:center;color:#888">No orders yet</td></tr>';
-
-  const userList = users.length ? await Promise.all(users.map(async u => {
-    const [inCount, outCount] = await Promise.all([
-      new Promise(r => db.get("SELECT COUNT(*) c FROM messages WHERE phone=? AND direction='in'", [u.phone], (_, x) => r(x?.c || 0))),
-      new Promise(r => db.get("SELECT COUNT(*) c FROM messages WHERE phone=? AND direction='out'", [u.phone], (_, x) => r(x?.c || 0)))
-    ]);
-    return `<div class="user"><strong>\( {u.phone}</strong> <span>In: \){inCount} | Out: ${outCount}</span></div>`;
-  })).then(arr => arr.join('')) : '<p style="color:#888;text-align:center">No users yet</p>';
-
-  res.send(`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>BlackLab • GOD MODE</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  body{margin:0;font-family:'Inter',sans-serif;background:#f8fafc;color:#1e293b}
-  .h{background:linear-gradient(135deg,#0044ff,#0066ff);color:#fff;padding:3rem;text-align:center}
-  .logo{font-size:2.8rem;font-weight:800}
-  .ping{background:#000;color:#0f0;padding:12px;border-radius:12px;font:1.3rem monospace;margin-top:10px}
-  .c{max-width:1400px;margin:2rem auto;padding:0 1rem}
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:1.5rem}
-  .card{background:#fff;border-radius:16px;padding:2rem;box-shadow:0 10px 40px rgba(0,0,0,0.12);margin-bottom:2rem}
-  .card h3{font-size:1.4rem;margin-bottom:1rem;color:#1e40af}
-  table{width:100%;border-collapse:collapse}
-  th,td{padding:14px;text-align:left;border-bottom:1px solid #e2e8f0}
-  th{background:#f1f5f9;font-weight:600}
-  input,textarea,select,button{width:100%;padding:14px;margin:10px 0;border-radius:12px;border:1px solid #cbd5e1;font-size:1rem}
-  button{background:#10b981;color:white;border:none;font-weight:700;cursor:pointer}
-  button:hover{background:#059669}
-  .del{background:#ef4444}
-  .del:hover{background:#dc2626}
-  .user{padding:12px 0;border-bottom:1px solid #eee;display:flex;justify-content:space-between}
-</style>
-</head><body>
-<div class="h">
-  <h1 class="logo">BlackLab Systems</h1>
-  <div class="ping">BOT IS 100% ALIVE • ${new Date().toLocaleString()}</div>
-</div>
-<div class="c">
-
-<div class="grid">
-  <div class="card"><h3>Live Stats</h3>
-    <strong>Messages In:</strong> ${stats.received}<br>
-    <strong>Messages Out:</strong> ${stats.sent}<br>
-    <strong>Uptime:</strong> \( {h}h \){m}m ${s}s
-  </div>
-  <div class="card"><h3>Quick Broadcast</h3>
-    <textarea id="btext" rows="4" placeholder="Send to all customers instantly..."></textarea>
-    <button onclick="broadcast()">BROADCAST NOW</button>
-  </div>
-</div>
-
-<div class="card">
-  <h3>Send Custom Message</h3>
-  <input type="text" id="phone" placeholder="Phone number (leave empty for all)">
-  <textarea id="text" rows="4" placeholder="Your message..."></textarea>
-  <input type="text" id="b1" placeholder="Button 1 text">
-  <input type="text" id="b2" placeholder="Button 2 text">
-  <button onclick="sendMsg()">SEND MESSAGE</button>
-</div>
-
-<div class="card">
-  <h3>Packages</h3>
-  <table><tr><th>Category</th><th>Title</th><th>Price</th><th>Action</th></tr>${packageRows}</table>
-  <div style="margin-top:20px;display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:12px">
-    <select id="cat"><option>data</option><option>minutes</option><option>sms</option></select>
-    <input id="title" placeholder="Title">
-    <input id="price" type="number" placeholder="Price">
-    <button onclick="addPkg()">ADD PACKAGE</button>
-  </div>
-</div>
-
-<div class="card"><h3>Recent Orders</h3><table><tr><th>Time</th><th>Phone</th><th>M-Pesa</th><th>Package</th><th>Status</th></tr>${orderRows}</table></div>
-<div class="card"><h3>User Activity</h3>${userList}</div>
-
-</div>
-
-<script>
-async function broadcast(){
-  const text = document.getElementById('btext').value.trim();
-  if(!text) return alert("Write a message");
-  await fetch('/broadcast',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text})});
-  alert("Broadcast sent to all users!");
-  document.getElementById('btext').value = '';
-}
-async function sendMsg(){
-  const to = document.getElementById('phone').value.trim() || null;
-  const text = document.getElementById('text').value.trim();
-  const b1 = document.getElementById('b1').value.trim() || null;
-  const b2 = document.getElementById('b2').value.trim() || null;
-  if(!text) return alert("Message required");
-  await fetch('/send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to,text,btn1:b1,btn2:b2})});
-  alert("Message sent!");
-  document.getElementById('text').value = '';
-}
-async function addPkg(){
-  const cat = document.getElementById('cat').value;
-  const title = document.getElementById('title').value.trim();
-  const price = document.getElementById('price').value;
-  if(!title || !price) return alert("Fill all fields");
-  await fetch('/package',{method:'POST',body:new URLSearchParams({cat,title,price})});
-  location.reload();
-}
-async function delPkg(id){
-  if(confirm("Delete this package?")) {
-    await fetch('/package/'+id,{method:'DELETE'});
-    location.reload();
-  }
-}
-setInterval(() => location.reload(), 300000); // refresh every 5 min
-</script>
-</body></html>`);
-});
-
-// ADMIN ENDPOINTS — FIXED THE BUG HERE
-app.post("/broadcast", async (req, res) => {
-  const { text } = req.body;
-  const users = await new Promise(r => db.all("SELECT DISTINCT phone FROM messages WHERE phone IS NOT NULL", (_, rows) => r(rows.map(x => x.phone))));
-  for (const p of users) await send(p, { body: text });
-  res.sendStatus(200);
-});
-
-app.post("/send", async (req, res) => {
-  let { to, text, btn1, btn2 } = req.body;
-  const buttons = [];
-  if (btn1) buttons.push({ type: "reply", reply: { id: "c1", title: btn1 } });
-  if (btn2) buttons.push({ type: "reply", reply: { id: "c2", title: btn2 } });
-
-  const targets = to ? [to] : await new Promise(r => db.all("SELECT DISTINCT phone FROM messages WHERE phone IS NOT NULL", (_, rows) => r(rows.map(x => x.phone))));
-  for (const p of targets) await send(p, { body: text, buttons });
-  res.sendStatus(200);
-});
-
-app.post("/package", (req, res) => {
-  const { cat, title, price } = req.body;
-  db.run("INSERT INTO packages (category,title,price) VALUES (?,?,?)", [cat, title, price]);
-  res.sendStatus(200);
-});
-
-app.delete("/package/:id", (req, res) => {
-  db.run("DELETE FROM packages WHERE id=?", [req.params.id]);
-  res.sendStatus(200);
-});
-
-// BOT FLOW
+// MAIN MENU
 const mainMenu = (to) => send(to, {
   body: "*Welcome to BlackLab Systems*\nKenya's #1 Instant Data Vendor\n\nChoose an option:",
   buttons: [
     { type: "reply", reply: { id: "packages", title: "See Packages" } },
-    { type: "reply", reply: { id: "about", title: "About Us" } }
+    { type: "reply", reply: { id: "about", title: "About Us" } },
+    { type: "reply", reply: { id: "contact", title: "Contact Us" } }
   ]
 });
 
+// PACKAGE CATEGORIES
+const packageMenu = (to) => send(to, {
+  body: "Select package type:",
+  buttons: [
+    { type: "reply", reply: { id: "data", title: "Data Bundles" } },
+    { type: "reply", reply: { id: "minutes", title: "Voice Minutes" } },
+    { type: "reply", reply: { id: "sms", title: "SMS Bundles" } }
+  ]
+});
+
+// SHOW PACKAGES
+const showPackages = async (to, cat) => {
+  const rows = await new Promise(r => db.all("SELECT * FROM packages WHERE category=?", [cat], (_, rows) => r(rows)));
+  const buttons = rows.slice(0, 3).map(p => ({ type: "reply", reply: { id: `pkg_${p.id}`, title: p.title } }));
+  send(to, {
+    body: `*{${cat.toUpperCase()} PACKAGES}*\nChoose your bundle:`,
+    buttons
+  });
+};
+
+// DASHBOARD — SUPER GOD MODE
+app.get("/", async (req, res) => {
+  const users = await new Promise(r => db.all("SELECT DISTINCT phone FROM messages ORDER BY timestamp DESC LIMIT 100", (_, rows) => r(rows)));
+  const orders = await new Promise(r => db.all("SELECT * FROM orders ORDER BY id DESC LIMIT 20", (_, rows) => r(rows)));
+  const packages = await new Promise(r => db.all("SELECT * FROM packages", (_, rows) => r(rows)));
+
+  const userList = users.map(u => `
+    <div style="padding:12px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center">
+      <strong>${u.phone}</strong>
+      <button onclick="sendTo('${u.phone}')" style="background:#10b981;color:#fff;border:none;padding:8px 16px;border-radius:8px">Message</button>
+    </div>`).join('');
+
+  const pkgList = packages.map(p => `<tr><td>\( {p.category}</td><td> \){p.title}</td><td>KSh \( {p.price}</td><td><button onclick="del( \){p.id})" style="background:#ef4444;color:#fff;padding:6px 12px;border:none;border-radius:6px">Delete</button></td></tr>`).join('');
+
+  res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BlackLab • SUPER BOT</title>
+  <style>
+    body{font-family:Arial;background:#f8fafc;color:#333;margin:0}
+    .header{background:linear-gradient(135deg,#0044ff,#0066ff);color:#fff;padding:2rem;text-align:center}
+    .logo{font-size:2.8rem;font-weight:900}
+    .ping{background:#000;color:#0f0;padding:12px;font:1.4rem monospace}
+    .container{max-width:1200px;margin:2rem auto;padding:1rem}
+    .card{background:#fff;border-radius:16px;padding:2rem;box-shadow:0 10px 30px rgba(0,0,0,0.1);margin-bottom:2rem}
+    button{background:#10b981;color:#fff;border:none;padding:12px 20px;border-radius:10px;cursor:pointer;font-weight:bold}
+    input,textarea,select{width:100%;padding:12px;margin:8px 0;border-radius:10px;border:1px solid #ccc}
+  </style>
+  </head><body>
+  <div class="header"><h1 class="logo">BlackLab SUPER BOT</h1><div class="ping">LIVE • ${new Date().toLocaleString()}</div></div>
+  <div class="container">
+    <div class="card"><h2>Customers (\( {users.length})</h2><div style="max-height:400px;overflow-y:auto"> \){userList || "No customers yet"}</div></div>
+    <div class="card"><h2>Send Message</h2>
+      <input id="to" placeholder="Phone (leave empty = all)"><textarea id="msg" rows="4" placeholder="Message"></textarea>
+      <input id="b1" placeholder="Button 1"><input id="b2" placeholder="Button 2">
+      <button onclick="sendMsg()">SEND</button>
+    </div>
+    <div class="card"><h2>Packages</h2><table style="width:100%"><tr><th>Cat</th><th>Title</th><th>Price</th><th></th></tr>${pkgList}</table></div>
+    <div class="card"><h2>Recent Orders</h2><table style="width:100%"><tr><th>Time</th><th>Phone</th><th>Package</th><th>Status</th></tr>
+      \( {orders.map(o=>`<tr><td> \){new Date(o.timestamp).toLocaleString()}</td><td>\( {o.phone}</td><td> \){o.package}</td><td>${o.status}</td></tr>`).join('')}
+    </table></div>
+  </div>
+  <script>
+    function sendTo(p){document.getElementById('to').value=p;}
+    async function sendMsg(){
+      const to = document.getElementById('to').value || null;
+      const msg = document.getElementById('msg').value;
+      const b1 = document.getElementById('b1').value || null;
+      const b2 = document.getElementById('b2').value || null;
+      if(!msg) return alert("Write message");
+      await fetch('/admin-send',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to,msg,b1,b2})});
+      alert("Sent!");
+    }
+    async function del(id){if(confirm("Delete?")){await fetch('/pkg/'+id,{method:'DELETE'});location.reload();}}
+  </script>
+  </body></html>`);
+});
+
+// ADMIN SEND
+app.post("/admin-send", async (req, res) => {
+  let { to, msg, b1, b2 } = req.body;
+  const buttons = [];
+  if (b1) buttons.push({ type: "reply", reply: { id: "1", title: b1 } });
+  if (b2) buttons.push({ type: "reply", reply: { id: "2", title: b2 } });
+  const targets = to ? [to] : await new Promise(r => db.all("SELECT DISTINCT phone FROM messages", (_, rows) => r(rows.map(x => x.phone))));
+  for (const p of targets) await send(p, { body: msg, buttons });
+  res.sendStatus(200);
+});
+
+app.delete("/pkg/:id", (req, res) => {
+  db.run("DELETE FROM packages WHERE id=?", [req.params.id]);
+  res.sendStatus(200);
+});
+
+// WEBHOOK — FULL FLOW
 app.post("/webhook", async (req, res) => {
   try {
     const msgs = req.body.entry?.[0]?.changes?.[0]?.value?.messages || [];
@@ -272,30 +164,22 @@ app.post("/webhook", async (req, res) => {
       processed.add(msg.id);
 
       const from = msg.from;
-      const btn = msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || "";
+      const btn = msg.interactive?.button_reply?.id || "";
+      const text = msg.text?.body?.trim() || "";
 
       stats.received++;
-      db.run("INSERT INTO messages (phone,direction,content) VALUES (?,?,?)", [from, "in", btn || msg.text?.body || "media"]);
+      db.run("INSERT INTO messages (phone,direction,content) VALUES (?,?,?)", [from, "in", btn || text]);
 
-      if (btn === "packages") {
-        send(from, {
-          body: "Select package type:",
-          buttons: [
-            { type: "reply", reply: { id: "cat_data", title: "Data Bundles" } },
-            { type: "reply", reply: { id: "cat_minutes", title: "Voice Minutes" } },
-            { type: "reply", reply: { id: "cat_sms", title: "SMS Bundles" } }
-          ]
-        });
-        continue;
-      }
+      if (btn === "packages") { packageMenu(from); continue; }
+      if (["data","minutes","sms"].includes(btn)) { showPackages(from, btn); continue; }
+      if (btn === "about") { send(from, { body: "*About BlackLab Systems*\n\nKenya's fastest instant vendor since 2024.\n• 1M+ bundles delivered\n• 100% automated\n• Lowest prices\n• Instant delivery\n• 24/7 support\n\nThank you for trusting us!", buttons: [{ type: "reply", reply: { id: "main", title: "Back to Menu" } }] }); continue; }
+      if (btn === "contact") { send(from, { body: "*Contact Us*\nPhone: +254 712 345 678\nEmail: support@blacklab.co.ke\nWe reply in <2 mins!", buttons: [{ type: "reply", reply: { id: "main", title: "Back" } }] }); continue; }
+      if (btn === "main") { mainMenu(from); continue; }
 
       mainMenu(from);
     }
     res.sendStatus(200);
-  } catch (e) {
-    console.error(e);
-    res.sendStatus(500);
-  }
+  } catch (e) { res.sendStatus(500); }
 });
 
 app.get("/webhook", (req, res) => {
@@ -304,5 +188,4 @@ app.get("/webhook", (req, res) => {
   res.sendStatus(403);
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("BLACKLAB IS NOW UNSTOPPABLE"));
+app.listen(process.env.PORT || 3000, () => console.log("BLACKLAB SUPER BOT IS LIVE AND UNSTOPPABLE"));
