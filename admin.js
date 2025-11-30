@@ -1,48 +1,42 @@
-// admin.js — FINAL 100% WORKING GOD-TIER DASHBOARD
+// admin.js — REAL-TIME, MOBILE-PERFECT, GOD-TIER DASHBOARD (FINAL)
 const express = require("express");
 const storage = require("./storage");
 const axios = require("axios");
 const router = express.Router();
 
-// Stats & Logs
-let stats = { received: 0, sent: 0, startTime: Date.now() };
-let messageLog = [];
+// Live stats & logs
+let stats = { received: 0, sent: 0 };
+let logs = [];
 
 router.stats = stats;
-router.logMessage = (type, phone, content) => {
-  messageLog.unshift({
-    time: new Date().toLocaleString(),
-    type,
-    phone,
-    content: String(content).substring(0, 100)
-  });
-  if (messageLog.length > 500) messageLog.pop();
+router.addLog = (type, phone, msg) => {
+  logs.unshift({ id: Date.now(), time: new Date().toLocaleTimeString(), type, phone, msg: msg.slice(0, 80) });
+  if (logs.length > 200) logs.pop();
+  stats[type === "IN" ? "received" : "sent"]++;
 };
 
-// Send WhatsApp message
-const sendWhatsAppMessage = async (to, text, buttons = []) => {
+// Send message
+const sendMsg = async (to, text, btns = []) => {
   try {
-    const payload = {
-      messaging_product: "whatsapp",
-      to,
-      type: "interactive",
-      interactive: {
-        type: "button",
-        header: { type: "image", image: { link: "https://i.imgur.com/elSEhEg.jpeg" } },
-        body: { text },
-        footer: { text: "BlackLab Systems • Instant • 24/7" },
-        action: { buttons }
-      }
-    };
     await axios.post(
       `https://graph.facebook.com/v20.0/${process.env.PHONE_NUMBER_ID}/messages`,
-      payload,
+      {
+        messaging_product: "whatsapp",
+        to,
+        type: "interactive",
+        interactive: {
+          type: "button",
+          header: { type: "image", image: { link: "https://i.imgur.com/elSEhEg.jpeg" } },
+          body: { text },
+          footer: { text: "BlackLab • Instant Delivery" },
+          action: { buttons: btns }
+        }
+      },
       { headers: { Authorization: `Bearer ${process.env.WA_TOKEN}` } }
     );
-    stats.sent++;
-    router.logMessage("OUT", to, text);
+    router.addLog("OUT", to, text);
   } catch (e) {
-    console.error("Send failed:", e.response?.data || e.message);
+    console.error("Send error:", e.message);
   }
 };
 
@@ -50,221 +44,206 @@ router.get("/", (req, res) => {
   const users = storage.getUsers();
   const packages = storage.getPackages();
 
-  const uptime = Math.floor((Date.now() - stats.startTime) / 1000);
-  const h = String(Math.floor(uptime / 3600)).padStart(2, "0");
-  const m = String(Math.floor((uptime % 3600) / 60)).padStart(2, "0");
-  const s = String(uptime % 60).padStart(2, "0");
-
   res.send(`<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="scroll-smooth">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BlackLab • Empire Control</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BlackLab Empire</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css">
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
   <style>
-    .sidebar-active { @apply bg-blue-50 text-blue-700 border-r-4 border-blue-600; }
+    .active-link { @apply bg-blue-50 text-blue-700 border-l-4 border-blue-600; }
+    .log-in { @apply bg-green-50 text-green-800 border-l-4 border-green-500; }
+    .log-out { @apply bg-blue-50 text-blue-800 border-l-4 border-blue-500; }
   </style>
 </head>
-<body class="bg-gray-50 min-h-screen flex">
-  <aside class="w-64 bg-white shadow-lg fixed h-full">
+<body class="bg-gray-50 min-h-screen" x-data="{ section: 'dashboard', selected: [] }">
+  <!-- Mobile Menu Button -->
+  <button @click="document.getElementById('sidebar').classList.toggle('-translate-x-full')" 
+    class="lg:hidden fixed top-4 left-4 z-50 bg-white p-3 rounded-xl shadow-lg">
+    <i class="fas fa-bars text-xl"></i>
+  </button>
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 w-64 bg-white shadow-xl transform -translate-x-full lg:translate-x-0 transition">
     <div class="p-6 border-b">
-      <h1 class="text-2xl font-bold text-blue-600">BlackLab</h1>
-      <p class="text-sm text-gray-500">Empire Control</p>
+      <h1 class="text-2xl font-black text-blue-600">BlackLab</h1>
+      <p class="text-xs text-gray-500">Empire Control</p>
     </div>
-    <nav class="mt-6">
-      <a href="#dashboard" class="sidebar-active flex items-center gap-3 px-6 py-4 text-sm font-medium"><i class="fas fa-home"></i> Dashboard</a>
-      <a href="#customers" class="flex items-center gap-3 px-6 py-4 text-sm font-medium hover:bg-gray-50"><i class="fas fa-users"></i> Customers</a>
-      <a href="#packages" class="flex items-center gap-3 px-6 py-4 text-sm font-medium hover:bg-gray-50"><i class="fas fa-box"></i> Packages</a>
-      <a href="#broadcast" class="flex items-center gap-3 px-6 py-4 text-sm font-medium hover:bg-gray-50"><i class="fas fa-bullhorn"></i> Broadcast</a>
-      <a href="#logs" class="flex items-center gap-3 px-6 py-4 text-sm font-medium hover:bg-gray-50"><i class="fas fa-history"></i> Logs</a>
+    <nav class="p-4">
+      <button @click="section='dashboard'" :class="section==='dashboard' ? 'active-link' : ''" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 mb-2">
+        <i class="fas fa-tachometer-alt"></i> Dashboard
+      </button>
+      <button @click="section='customers'" :class="section==='customers' ? 'active-link' : ''" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 mb-2">
+        <i class="fas fa-users"></i> Customers <span class="ml-auto bg-gray-200 px-2 py-1 rounded-full text-xs">${users.length}</span>
+      </button>
+      <button @click="section='packages'" :class="section==='packages' ? 'active-link' : ''" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 mb-2">
+        <i class="fas fa-box"></i> Packages
+      </button>
+      <button @click="section='broadcast'" :class="section==='broadcast' ? 'active-link' : ''" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 mb-2">
+        <i class="fas fa-bullhorn"></i> Broadcast
+      </button>
+      <button @click="section='logs'" :class="section==='logs' ? 'active-link' : ''" class="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3">
+        <i class="fas fa-history"></i> Logs
+      </button>
     </nav>
-    <div class="absolute bottom-0 w-full p-6 border-t text-xs text-gray-500">Uptime: \( {h}h \){m}m ${s}s</div>
   </aside>
 
-  <main class="ml-64 p-8 flex-1">
-    <section id="dashboard">
-      <h2 class="text-3xl font-bold mb-8">Dashboard</h2>
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <div class="bg-white rounded-2xl shadow p-6"><div class="text-gray-500 text-sm">Received</div><div class="text-4xl font-bold text-green-600">${stats.received}</div></div>
-        <div class="bg-white rounded-2xl shadow p-6"><div class="text-gray-500 text-sm">Sent</div><div class="text-4xl font-bold text-blue-600">${stats.sent}</div></div>
-        <div class="bg-white rounded-2xl shadow p-6"><div class="text-gray-500 text-sm">Customers</div><div class="text-4xl font-bold text-purple-600">${users.length}</div></div>
-        <div class="bg-white rounded-2xl shadow p-6"><div class="text-gray-500 text-sm">Packages</div><div class="text-4xl font-bold text-orange-600">${packages.length}</div></div>
-      </div>
-    </section>
+  <!-- Main -->
+  <main class="lg:ml-64 p-6 pt-20 lg:pt-6">
+    <!-- Dashboard -->
+    <div x-show="section === 'dashboard'">
+      <h2 class="text-3xl font-bold mb-8">Live Dashboard</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-6" hx-get="/stats" hx-trigger="every 3s" hx-swap="outerHTML"></div>
+    </div>
 
-    <section id="customers" class="hidden">
-      <div class="flex justify-between items-center mb-6">
+    <!-- Customers -->
+    <div x-show="section === 'customers'" class="space-y-6">
+      <div class="flex justify-between items-center">
         <h2 class="text-3xl font-bold">Customers</h2>
-        <button onclick="selectAll()" class="bg-gray-200 px-4 py-2 rounded-lg text-sm">Select All</button>
+        <div class="text-sm text-gray-600">Selected: <span x-text="selected.length"></span></div>
       </div>
       <div class="bg-white rounded-2xl shadow overflow-hidden">
-        <table class="w-full text-sm">
-          <thead class="bg-gray-50"><tr><th class="px-6 py-4 text-left">Phone</th><th class="text-right px-6">Action</th></tr></thead>
+        <table class="w-full">
+          <thead class="bg-gray-50"><tr><th class="px-6 py-4 text-left text-xs font-medium text-gray-500">PHONE</th><th class="text-center">SELECT</th></tr></thead>
           <tbody class="divide-y">
-            ${users.length === 0 ? '<tr><td colspan="2" class="text-center py-8 text-gray-500">No customers yet</td></tr>' : 
-              users.map(p => 
-                `<tr>
-                  <td class="px-6 py-4"><input type="checkbox" value="\( {p}" class="mr-3 selected-customers"> <strong> \){p}</strong></td>
-                  <td class="text-right px-6"><button onclick="openBroadcast(['${p}'])" class="text-blue-600 hover:underline">Message</button></td>
-                </tr>`
-              ).join("")}
+            ${users.map(p => `
+            <tr>
+              <td class="px-6 py-4 font-medium">${p}</td>
+              <td class="text-center">
+                <input type="checkbox" value="\( {p}" @change="selected.includes(' \){p}') ? selected.splice(selected.indexOf('\( {p}'),1) : selected.push(' \){p}')">
+              </td>
+            </tr>`).join("")}
           </tbody>
         </table>
       </div>
-    </section>
+    </div>
 
-    <section id="packages" class="hidden">
-      <div class="flex justify-between mb-6">
+    <!-- Packages -->
+    <div x-show="section === 'packages'" class="space-y-6">
+      <div class="flex justify-between items-center mb-6">
         <h2 class="text-3xl font-bold">Packages</h2>
-        <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-6 py-3 rounded-xl">+ Add Package</button>
+        <button @click="document.getElementById('addModal').showModal()" class="bg-blue-600 text-white px-6 py-3 rounded-xl text-sm font-bold">+ Add Package</button>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        ${packages.map(p => `
-          <div class="bg-white rounded-2xl shadow p-6 border hover:shadow-xl transition">
-            <div class="flex justify-between mb-4">
-              <span class="text-xs font-medium text-gray-500 uppercase">${p.category}</span>
-              <button onclick="deletePkg(${p.id})" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>
-            </div>
-            <h3 class="text-xl font-bold">${p.title}</h3>
-            <p class="text-3xl font-bold text-green-600 mt-3">KSh ${p.price}</p>
-          </div>
-        `).join("")}
-      </div>
-    </section>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6" hx-get="/packages" hx-trigger="load, every 30s"></div>
+    </div>
 
-    <section id="broadcast" class="hidden">
-      <h2 class="text-3xl font-bold mb-8">Broadcast Message</h2>
-      <div class="bg-white rounded-2xl shadow p-8 max-w-2xl mx-auto">
-        <textarea id="msgText" rows="6" class="w-full border rounded-xl p-4" placeholder="Your message..."></textarea>
-        <div class="grid grid-cols-2 gap-4 mt-4">
-          <input id="btn1" placeholder="Button 1" class="border rounded-xl px-4 py-3">
-          <input id="btn2" placeholder="Button 2" class="border rounded-xl px-4 py-3">
+    <!-- Broadcast -->
+    <div x-show="section === 'broadcast'" class="max-w-2xl mx-auto">
+      <h2 class="text-3xl font-bold mb-8 text-center">Send Broadcast</h2>
+      <div class="bg-white rounded-2xl shadow p-8 space-y-6">
+        <div>
+          <label class="block text-sm font-medium mb-2">Message</label>
+          <textarea x-model="msg" rows="5" class="w-full border rounded-xl p-4 focus:ring-2 focus:ring-blue-500"></textarea>
         </div>
-        <button onclick="openBroadcast()" class="mt-6 w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 rounded-xl">
-          SEND TO SELECTED
+        <div class="grid grid-cols-2 gap-4">
+          <input x-model="btn1" placeholder="Button 1" class="border rounded-xl px-4 py-3">
+          <input x-model="btn2" placeholder="Button 2" class="border rounded-xl px-4 py-3">
+        </div>
+        <button @click="sendBroadcast()" :disabled="selected.length===0" 
+          class="w-full py-4 rounded-xl font-bold text-white transition" 
+          :class="selected.length>0 ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-300 cursor-not-allowed'">
+          Send to <span x-text="selected.length"></span> customers
         </button>
       </div>
-    </section>
+    </div>
 
-    <section id="logs" class="hidden">
-      <h2 class="text-3xl font-bold mb-6">Message Logs</h2>
-      <div class="bg-white rounded-2xl shadow overflow-hidden text-sm">
-        <table class="w-full">
-          <thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left">Time</th><th>Type</th><th>Phone</th><th>Message</th></tr></thead>
-          <tbody>
-            ${messageLog.length === 0 ? '<tr><td colspan="4" class="text-center py-8 text-gray-500">No logs yet</td></tr>' :
-              messageLog.map(l => `
-                <tr class="${l.type === 'IN' ? 'bg-green-50' : 'bg-blue-50'}">
-                  <td class="px-6 py-3">${l.time}</td>
-                  <td><span class="px-3 py-1 rounded-full text-xs font-bold">${l.type}</span></td>
-                  <td class="font-medium">${l.phone}</td>
-                  <td class="text-gray-700">\( {l.content} \){l.content.length === 100 ? '...' : ''}</td>
-                </tr>
-              `).join("")}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <!-- Logs -->
+    <div x-show="section === 'logs'">
+      <h2 class="text-3xl font-bold mb-6">Live Message Logs</h2>
+      <div class="bg-white rounded-2xl shadow overflow-hidden" hx-get="/logs" hx-trigger="every 2s" hx-swap="innerHTML"></div>
+    </div>
   </main>
 
   <!-- Add Package Modal -->
-  <div id="addModal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl p-8 w-full max-w-md">
-      <h3 class="text-2xl font-bold mb-6">Add Package</h3>
-      <select id="cat" class="w-full border rounded-xl px-4 py-3 mb-4">
-        <option>data</option><option>minutes</option><option>sms</option>
-      </select>
-      <input id="title" placeholder="Name" class="w-full border rounded-xl px-4 py-3 mb-4">
-      <input id="price" type="number" placeholder="Price (KSh)" class="w-full border rounded-xl px-4 py-3 mb-6">
-      <div class="flex gap-4">
-        <button onclick="this.closest('#addModal').classList.add('hidden')" class="flex-1 bg-gray-200 py-3 rounded-xl">Cancel</button>
-        <button onclick="addPkg()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold">Add</button>
-      </div>
+  <dialog id="addModal" class="rounded-2xl p-8 w-full max-w-md">
+    <h3 class="text-2xl font-bold mb-6">New Package</h3>
+    <select id="cat" class="w-full border rounded-xl p-3 mb-4">
+      <option>data</option><option>minutes</option><option>sms</option>
+    </select>
+    <input id="title" placeholder="Name" class="w-full border rounded-xl p-3 mb-4">
+    <input id="price" type="number" placeholder="Price" class="w-full border rounded-xl p-3 mb-6">
+    <div class="flex gap-4">
+      <button onclick="this.closest('dialog').close()" class="flex-1 bg-gray-200 py-3 rounded-xl">Cancel</button>
+      <button onclick="addPkg()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold">Add</button>
     </div>
-  </div>
-
-  <!-- Broadcast Modal -->
-  <div id="broadcastModal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-50">
-    <div class="bg-white rounded-2xl p-8 w-full max-w-lg">
-      <h3 class="text-2xl font-bold mb-4">Send to <span id="count">0</span> customers</h3>
-      <textarea id="finalText" rows="5" class="w-full border rounded-xl p-4 mb-4"></textarea>
-      <div class="grid grid-cols-2 gap-4 mb-6">
-        <input id="finalBtn1" placeholder="Button 1" class="border rounded-xl px-4 py-3">
-        <input id="finalBtn2" placeholder="Button 2" class="border rounded-xl px-4 py-3">
-      </div>
-      <button onclick="sendNow()" class="w-full bg-green-600 text-white font-bold py-4 rounded-xl">SEND NOW</button>
-    </div>
-  </div>
+  </dialog>
 
   <script>
-    const sections = document.querySelectorAll('section');
-    document.querySelectorAll('nav a').forEach(link => {
-      link.addEventListener('click', e => {
-        e.preventDefault();
-        const target = link.getAttribute('href');
-        sections.forEach(s => s.classList.add('hidden'));
-        document.querySelector(target).classList.remove('hidden');
-        document.querySelectorAll('nav a').forEach(a => a.classList.remove('sidebar-active'));
-        link.classList.add('sidebar-active');
-      });
-    });
-
-    function selectAll() {
-      document.querySelectorAll('.selected-customers').forEach(c => c.checked = true);
-    }
-
-    let selected = [];
-    function openBroadcast(single = null) {
-      selected = single || Array.from(document.querySelectorAll('.selected-customers:checked')).map(c => c.value);
-      if (selected.length === 0) return alert("Select at least one customer");
-      document.getElementById('count').textContent = selected.length;
-      document.getElementById('finalText').value = document.getElementById('msgText').value;
-      document.getElementById('finalBtn1').value = document.getElementById('btn1').value;
-      document.getElementById('finalBtn2').value = document.getElementById('btn2').value;
-      document.getElementById('broadcastModal').classList.remove('hidden');
-    }
-
-    function sendNow() {
-      const text = document.getElementById('finalText').value.trim();
-      const b1 = document.getElementById('finalBtn1').value.trim();
-      const b2 = document.getElementById('finalBtn2').value.trim();
-      if (!text) return alert("Message required");
-      fetch('/broadcast', {
+    const { section, selected, msg = '', btn1 = '', btn2 = '' } = Alpine.store('app', { section, selected, msg, btn1, btn2);
+    async function sendBroadcast() {
+      if (!msg.value) return alert("Write a message");
+      await fetch('/broadcast', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({targets: selected, text, btn1: b1 || null, btn2: b2 || null})
-      }).then(() => {
-        alert("Sent to " + selected.length + " customers!");
-        document.getElementById('broadcastModal').classList.add('hidden');
+        body: JSON.stringify({targets: selected, text: msg.value, btn1: btn1.value, btn2: btn2.value})
       });
+      alert("Sent to " + selected.length + " customers!");
+      selected.length = 0;
+      msg.value = btn1.value = btn2.value = '';
     }
-
     function addPkg() {
-      const cat = document.getElementById('cat').value;
-      const title = document.getElementById('title').value.trim();
-      const price = document.getElementById('price').value;
-      if (!title || !price) return alert("Fill all fields");
       fetch('/add-package', {
         method: 'POST',
-        body: new URLSearchParams({cat, title, price})
+        body: new URLSearchParams({
+          cat: document.getElementById('cat').value,
+          title: document.getElementById('title').value,
+          price: document.getElementById('price').value
+        })
       }).then(() => location.reload());
     }
-
-    function deletePkg(id) {
-      if (confirm("Delete this package?")) {
-        fetch('/delete-package/' + id, {method: 'DELETE'}).then(() => location.reload());
-      }
-    }
-
-    setInterval(() => location.reload(), 60000);
   </script>
 </body>
 </html>`);
 });
 
-// Routes
+// Real-time endpoints
+router.get("/stats", (req, res) => {
+  res.send(`
+    <div class="bg-white rounded-2xl shadow p-6 border"><div class="text-gray-500 text-sm">Received</div><div class="text-4xl font-bold text-green-600">${stats.received}</div></div>
+    <div class="bg-white rounded-2xl shadow p-6 border"><div class="text-gray-500 text-sm">Sent</div><div class="text-4xl font-bold text-blue-600">${stats.sent}</div></div>
+    <div class="bg-white rounded-2xl shadow p-6 border"><div class="text-gray-500 text-sm">Customers</div><div class="text-4xl font-bold text-purple-600">${storage.getUsers().length}</div></div>
+    <div class="bg-white rounded-2xl shadow p-6 border"><div class="text-gray-500 text-sm">Packages</div><div class="text-4xl font-bold text-orange-600">${storage.getPackages().length}</div></div>
+  `);
+});
+
+router.get("/logs", (req, res) => {
+  res.send(`
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left">Time</th><th>Type</th><th>Phone</th><th>Message</th></tr></thead>
+      <tbody>
+        ${logs.length === 0 ? '<tr><td colspan="4" class="text-center py-8 text-gray-500">No logs yet</td></tr>' :
+          logs.map(l => `<tr class="${l.type==='IN'?'log-in':'log-out'}">
+            <td class="px-6 py-3">${l.time}</td>
+            <td><span class="px-3 py-1 rounded-full text-xs font-bold">${l.type}</span></td>
+            <td class="font-medium">${l.phone}</td>
+            <td>${l.msg}</td>
+          </tr>`).join("")}
+      </tbody>
+    </table>
+  `);
+});
+
+router.get("/packages", (req, res) => {
+  const pkgs = storage.getPackages();
+  res.send(pkgs.map(p => `
+    <div class="bg-white rounded-2xl shadow p-6 border">
+      <div class="flex justify-between mb-4">
+        <span class="text-xs font-medium text-gray-500 uppercase">${p.category}</span>
+        <button onclick="if(confirm('Delete?')) fetch('/delete-package/${p.id}',{method:'DELETE'}).then(()=>location.reload())" class="text-red-600">
+          <i class="fas fa-trash"></i>
+        </button>
+      </div>
+      <h3 class="text-xl font-bold">${p.title}</h3>
+      <p class="text-3xl font-bold text-green-600>KSh ${p.price}</p>
+    </div>
+  `).join(""));
+});
+
+// Keep existing routes
 router.post("/add-package", (req, res) => {
   const { cat, title, price } = req.body;
   storage.addPackage({ category: cat, title, price: Number(price) });
@@ -278,14 +257,11 @@ router.delete("/delete-package/:id", (req, res) => {
 
 router.post("/broadcast", async (req, res) => {
   let { targets, text, btn1, btn2 } = req.body;
-  if (!Array.isArray(targets)) targets = [];
+  if (!Array.isArray(targets)) return res.sendStatus(400);
   const buttons = [];
   if (btn1) buttons.push({ type: "reply", reply: { id: "1", title: btn1 } });
   if (btn2) buttons.push({ type: "reply", reply: { id: "2", title: btn2 } });
-
-  for (const to of targets) {
-    await sendWhatsAppMessage(to, text, buttons);
-  }
+  for (const to of targets) await sendMsg(to, text, buttons);
   res.sendStatus(200);
 });
 
