@@ -1,44 +1,42 @@
-// bot.js — FINAL PROFESSIONAL WHATSAPP BOT (LIST MENU + PERFECT PACKAGES)
+// bot.js — FINAL UNBREAKABLE VERSION (PHOTO + LIST + ZERO LAG)
 const axios = require("axios");
 const storage = require("./storage");
 
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WA_TOKEN = process.env.WA_TOKEN;
 
-// Global session store (simple in-memory)
+// In-memory session (fast & real-time)
 const sessions = {};
 
-// Send text
-const sendText = async (to, text) => {
+// Send message with image + caption
+const sendWithImage = async (to, imageUrl, caption) => {
   await axios.post(
     `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`,
-    { messaging_product: "whatsapp", to, type: "text", text: { body: text } },
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "image",
+      image: {
+        link: imageUrl,
+        caption: caption
+      }
+    },
     { headers: { Authorization: `Bearer ${WA_TOKEN}` } }
   );
 };
 
-// Send interactive list of packages
+// Send interactive list (packages)
 const sendPackageList = async (to) => {
   const packages = storage.getPackages();
-  if (packages.length === 0) {
-    return sendText(to, "No packages available right now. Try again later!");
+  if (!packages || packages.length === 0) {
+    return sendText(to, "No packages available right now.");
   }
 
-  const sections = [];
-  const seenTitles = new Set();
-
-  packages.forEach(p => {
-    if (!seenTitles.has(p.title)) {
-      seenTitles.add(p.title);
-      sections.push({
-        id: `pkg_${p.id}`,
-        title: `\( {p.title} — KSh \){p.price}`,
-        description: p.category.toUpperCase()
-      });
-    }
-  });
-
-  if (sections.length === 0) return sendText(to, "No packages found.");
+  const rows = packages.slice(0, 10).map(p => ({
+    id: `pkg_${p.id}`,
+    title: `${p.title}`,
+    description: `KSh \( {p.price} • \){p.category.toUpperCase()}`
+  }));
 
   await axios.post(
     `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`,
@@ -49,11 +47,11 @@ const sendPackageList = async (to) => {
       interactive: {
         type: "list",
         header: { type: "text", text: "BlackLab Packages" },
-        body: { text: "Tap a package to buy instantly" },
+        body: { text: "Tap your desired package below" },
         footer: { text: "Instant Delivery • 24/7" },
         action: {
-          button: "Select Package",
-          sections: [{ title: "All Packages", rows: sections.slice(0, 10) }]
+          button: "Choose Package",
+          sections: [{ title: "Available Bundles", rows }]
         }
       }
     },
@@ -61,8 +59,22 @@ const sendPackageList = async (to) => {
   );
 };
 
-// Main menu
-const sendMenu = async (to) => {
+// Send text only
+const sendText = async (to, text) => {
+  await axios.post(
+    `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "text",
+      text: { body: text }
+    },
+    { headers: { Authorization: `Bearer ${WA_TOKEN}` } }
+  );
+};
+
+// Send confirmation buttons
+const sendConfirm = async (to) => {
   await axios.post(
     `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`,
     {
@@ -70,20 +82,12 @@ const sendMenu = async (to) => {
       to,
       type: "interactive",
       interactive: {
-        type: "list",
-        header: { type: "text", text: "BlackLab Kenya" },
-        body: { text: "Welcome! Choose an option:" },
-        footer: { text: "Fast • Trusted • 24/7" },
+        type: "button",
+        body: { text: "Confirm your order?" },
         action: {
-          button: "Menu",
-          sections: [
-            {
-              rows: [
-                { id: "packages", title: "Buy Bundles & Airtime" },
-                { id: "about", title: "About Us" },
-                { id: "contact", title: "Contact Support" }
-              ]
-            }
+          buttons: [
+            { type: "reply", reply: { id: "yes_confirm", title: "Yes, Pay Now" } },
+            { type: "reply", reply: { id: "no_cancel", title: "Cancel" } }
           ]
         }
       }
@@ -92,141 +96,135 @@ const sendMenu = async (to) => {
   );
 };
 
-// Handle incoming
-const handleMessage = async (from, text, payload = null) => {
-  text = (text || "").trim().toLowerCase();
-  storage.addUser(from);
+// Main menu with photo
+const sendWelcome = async (to) => {
+  await sendWithImage(
+    to,
+    "https://i.imgur.com/elSEhEg.jpeg",  // ← YOUR LOGO / BANNER HERE
+    `*Welcome to BlackLab*\n\nKenya's #1 Instant Airtime & Data Vendor\n\nReply with:\n• *Buy* — See packages\n• *About* — Who we are\n• *Support* — Contact us`
+  );
+};
 
-  // Reset session if user says "menu" or "hi"
-  if (text === "hi" || text === "hello" || text === "menu") {
-    delete sessions[from];
-    return sendMenu(from);
+// Handle all incoming
+const handleIncoming = async (from, body) => {
+  const text = (body.text?.body || "").trim().toLowerCase();
+  const payload = body.interactive?.button_reply?.id || body.interactive?.list_reply?.id;
+
+  storage.addUser(from);
+  const session = sessions[from] || { step: "start" };
+  sessions[from] = session;
+
+  // Reset on "hi", "hello", "menu"
+  if (["hi", "hello", "menu", "start"].includes(text)) {
+    session.step = "start";
+    return sendWelcome(from);
   }
 
-  const session = sessions[from] || {};
-
-  // Step 1: Show packages
-  if (payload === "packages" || text.includes("buy") || text.includes("package")) {
-    session.step = "awaiting_package";
-    sessions[from] = session;
+  // Buy flow
+  if (text.includes("buy") || payload === "buy") {
+    session.step = "choosing_package";
     return sendPackageList(from);
   }
 
-  // Step 2: Package selected via list
-  if (payload && payload.startsWith("pkg_")) {
+  // Package selected
+  if (payload?.startsWith("pkg_")) {
     const pkgId = Number(payload.split("_")[1]);
     const pkg = storage.getPackages().find(p => p.id === pkgId);
     if (!pkg) return sendText(from, "Package not found.");
 
     session.package = pkg;
-    session.step = "awaiting_recipient";
+    session.step = "recipient";
     sessions[from] = session;
 
-    return sendText(from, `*Selected:* \( {pkg.title} — KSh \){pkg.price}\n\nPlease send the *phone number to receive the bundle* (e.g. 07xx xxx xxx)`);
+    return sendText(from, `*Selected:* \( {pkg.title}\nPrice: *KSh \){pkg.price}*\n\nSend the phone number to receive the bundle (e.g. 0712345678)`);
   }
 
-  // Step 3: Recipient number
-  if (session.step === "awaiting_recipient" && text.match(/^07\d{8}\( |^\+2547\d{8} \)|^2547\d{8}$/)) {
-    session.recipient = text.replace(/^\+/, "").trim();
-    session.step = "awaiting_mpesa";
+  // Recipient number
+  if (session.step === "recipient" && /^0?\d{10}$/.test(text.replace(/\D/g, ""))) {
+    session.recipient = "254" + text.replace(/\D/g, "").slice(-9);
+    session.step = "mpesa";
     sessions[from] = session;
 
-    return sendText(from, `Recipient: ${session.recipient}\n\nNow send your *M-PESA number* (the one that will pay)`);
+    return sendText(from, `Recipient: ${session.recipient}\n\nNow send your M-PESA number (the one paying)`);
   }
 
-  // Step 4: M-PESA number
-  if (session.step === "awaiting_mpesa" && text.match(/^07\d{8}\( |^\+2547\d{8} \)|^2547\d{8}$/)) {
-    session.mpesa = text.replace(/^\+/, "").trim();
+  // M-Pesa number
+  if (session.step === "mpesa" && /^0?\d{10}$/.test(text.replace(/\D/g, ""))) {
+    session.mpesa = "254" + text.replace(/\D/g, "").slice(-9);
+    session.step = "confirm";
     sessions[from] = session;
 
     await sendText(from, `
-*ORDER SUMMARY*
-Package: ${session.package.title}
-Price: KSh ${session.package.price}
-Recipient: ${session.recipient}
-Pay from: ${session.mpesa}
+*ORDER CONFIRMATION*
 
-Confirm to receive STK Push now...
+Package → ${session.package.title}
+Price → KSh ${session.package.price}
+Receive → ${session.recipient}
+Pay from → ${session.mpesa}
+
+Ready to send STK Push?
     `);
+    return sendConfirm(from);
+  }
 
-    await axios.post(
-      `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        messaging_product: "whatsapp",
-        to: from,
-        type: "interactive",
-        interactive: {
-          type: "button",
-          body: { text: "Confirm purchase?" },
-          action: {
-            buttons: [
-              { type: "reply", reply: { id: "confirm_yes", title: "Yes, Pay Now" } },
-              { type: "reply", reply: { id: "confirm_no", title: "Cancel" } }
-            ]
-          }
-        }
-      },
-      { headers: { Authorization: `Bearer ${WA_TOKEN}` } }
-    );
-    session.step = "awaiting_confirmation";
-    sessions[from] = session;
+  // Confirm Yes
+  if (payload === "yes_confirm") {
+    delete sessions[from];
+    await sendText(from, `STK Push sent to \( {session.mpesa}\n\nPay KSh \){session.package.price} to complete.\n\nBundle delivered in seconds!`);
+    // ← CALL YOUR M-PESA FUNCTION HERE
     return;
   }
 
-  // About & Contact
-  if (payload === "about" || text === "about") {
-    return sendText(from, `*ABOUT BLACKLAB*\n\nKenya's #1 Instant Airtime & Data Vendor\n\n• 100% Automated\n• 24/7 Delivery\n• Trusted by 50,000+ users\n\nType *menu* to go back`);
+  // Cancel
+  if (payload === "no_cancel") {
+    delete sessions[from];
+    return sendText(from, "Order cancelled. Type *menu* to start again.");
   }
 
-  if (payload === "contact" || text.includes("support")) {
-    return sendText(from, `*SUPPORT*\n\nWhatsApp: +254 700 000 000\nEmail: support@blacklab.ke\n\nReply within 2 minutes • 24/7\n\nType *menu* to go back`);
+  // About & Support
+  if (text === "about") {
+    return sendText(from, `*ABOUT BLACKLAB*\n\nKenya's fastest growing instant delivery platform.\n• 100% Automated\n• 24/7 Service\n• Trusted by 100,000+ users\n\nType *menu* to go back`);
   }
 
-  // Default
+  if (text.includes("support") || text.includes("help")) {
+    return sendText(from, `*SUPPORT*\nWhatsApp: +254 700 000 000\nEmail: support@blacklab.ke\n\nWe reply in under 3 minutes • 24/7`);
+  }
+
+  // Fallback
   sendText(from, "I don't understand.\n\nType *menu* to see options.");
 };
 
-// Button replies
-const handleButton = async (from, payload) => {
-  const session = sessions[from] || {};
-
-  if (payload === "confirm_yes" && session.package) {
-    delete sessions[from];
-    await sendText(from, `Sending STK Push for *\( {session.package.title}* (KSh \){session.package.price}) to ${session.mpesa}...\n\nYou’ll receive a prompt in seconds.\n\nBundle delivered instantly after payment!`);
-    // CALL M-PESA STK PUSH HERE (next message)
-  }
-
-  if (payload === "confirm_no") {
-    delete sessions[from];
-    await sendText(from, "Order cancelled. Type *menu* to start again.");
-  }
-};
-
-// Webhook
+// Webhook — FAST & CLEAN
 const webhook = async (req, res) => {
-  if (req.body.object) {
-    for (const entry of req.body.entry || []) {
-      for (const change of entry.changes || []) {
-        const msg = change.value.messages?.[0];
-        if (!msg) continue;
-
-        const from = msg.from;
-        const text = msg.text?.body;
-        const buttonPayload = msg.interactive?.button_reply?.id;
-        const listPayload = msg.interactive?.list_reply?.id;
-
-        if (buttonPayload) {
-          await handleButton(from, buttonPayload);
-        } else if (listPayload) {
-          await handleMessage(from, "", listPayload);
-        } else if (text) {
-          await handleMessage(from, text);
-        }
+  try {
+    if (req.method === "GET") {
+      // Verification
+      const mode = req.query["hub.mode"];
+      const token = req.query["hub.verify_token"];
+      const challenge = req.query["hub.challenge"];
+      if (mode && token === process.env.VERIFY_TOKEN) {
+        return res.send(challenge);
       }
+      return res.sendStatus(403);
     }
-    res.sendStatus(200);
-  } else {
-    res.sendStatus(404);
+
+    if (req.body.object) {
+      for (const entry of req.body.entry || []) {
+        const changes = entry.changes?.[0]?.value;
+        if (!changes?.messages?.[0]) continue;
+
+        const message = changes.messages[0];
+        const from = message.from;
+
+        await handleIncoming(from, message);
+      }
+      res.sendStatus(200);
+    } else {
+      res.sendStatus(404);
+    }
+  } catch (err) {
+    console.error("Webhook error:", err.message);
+    res.sendStatus(500);
   }
 };
 
