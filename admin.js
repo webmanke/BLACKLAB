@@ -1,4 +1,4 @@
-// admin.js — FINAL, 100% WORKING, GOD-TIER DASHBOARD
+// admin.js — FINAL 100% WORKING GOD-TIER DASHBOARD
 const express = require("express");
 const storage = require("./storage");
 const axios = require("axios");
@@ -14,12 +14,12 @@ router.logMessage = (type, phone, content) => {
     time: new Date().toLocaleString(),
     type,
     phone,
-    content: content.substring(0, 100)
+    content: String(content).substring(0, 100)
   });
   if (messageLog.length > 500) messageLog.pop();
 };
 
-// Send message function
+// Send WhatsApp message
 const sendWhatsAppMessage = async (to, text, buttons = []) => {
   try {
     const payload = {
@@ -56,21 +56,23 @@ router.get("/", (req, res) => {
   const s = String(uptime % 60).padStart(2, "0");
 
   res.send(`<!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BlackLab • Empire Control</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
   <style>
     .sidebar-active { @apply bg-blue-50 text-blue-700 border-r-4 border-blue-600; }
-    .log-in { @apply bg-green-50 text-green-800 border-l-4 border-green-500; }
-    .log-out { @apply bg-blue-50 text-blue-800 border-l-4 border-blue-500; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen flex">
-  <aside class="w-64 bg-white shadow-lg">
-    <div class="p-6 border-b"><h1 class="text-2xl font-bold text-blue-600">BlackLab</h1><p class="text-sm text-gray-500">Empire Control</p></div>
+  <aside class="w-64 bg-white shadow-lg fixed h-full">
+    <div class="p-6 border-b">
+      <h1 class="text-2xl font-bold text-blue-600">BlackLab</h1>
+      <p class="text-sm text-gray-500">Empire Control</p>
+    </div>
     <nav class="mt-6">
       <a href="#dashboard" class="sidebar-active flex items-center gap-3 px-6 py-4 text-sm font-medium"><i class="fas fa-home"></i> Dashboard</a>
       <a href="#customers" class="flex items-center gap-3 px-6 py-4 text-sm font-medium hover:bg-gray-50"><i class="fas fa-users"></i> Customers</a>
@@ -81,54 +83,67 @@ router.get("/", (req, res) => {
     <div class="absolute bottom-0 w-full p-6 border-t text-xs text-gray-500">Uptime: \( {h}h \){m}m ${s}s</div>
   </aside>
 
-  <main class="flex-1 overflow-y-auto p-8 max-w-6xl mx-auto">
-    <section id="dashboard"><h2 class="text-3xl font-bold mb-8">Dashboard</h2>
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-        <div class="bg-white rounded-2xl shadow p-6 border"><div class="text-gray-500 text-sm">Received</div><div class="text-4xl font-bold text-green-600">${stats.received}</div></div>
-        <div class="bg-white rounded-2xl shadow p-6 border"><div class="text-gray-500 text-sm">Sent</div><div class="text-4xl font-bold text-blue-600">${stats.sent}</div></div>
-        <div class="bg-white rounded-2xl shadow p-6 border"><div class="text-gray-500 text-sm">Customers</div><div class="text-4xl font-bold text-purple-600">${users.length}</div></div>
-        <div class="bg-white rounded-2xl shadow p-6 border"><div class="text-gray-500 text-sm">Packages</div><div class="text-4xl font-bold text-orange-600">${packages.length}</div></div>
+  <main class="ml-64 p-8 flex-1">
+    <section id="dashboard">
+      <h2 class="text-3xl font-bold mb-8">Dashboard</h2>
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div class="bg-white rounded-2xl shadow p-6"><div class="text-gray-500 text-sm">Received</div><div class="text-4xl font-bold text-green-600">${stats.received}</div></div>
+        <div class="bg-white rounded-2xl shadow p-6"><div class="text-gray-500 text-sm">Sent</div><div class="text-4xl font-bold text-blue-600">${stats.sent}</div></div>
+        <div class="bg-white rounded-2xl shadow p-6"><div class="text-gray-500 text-sm">Customers</div><div class="text-4xl font-bold text-purple-600">${users.length}</div></div>
+        <div class="bg-white rounded-2xl shadow p-6"><div class="text-gray-500 text-sm">Packages</div><div class="text-4xl font-bold text-orange-600">${packages.length}</div></div>
       </div>
     </section>
 
     <section id="customers" class="hidden">
-      <div class="flex justify-between mb-6"><h2 class="text-3xl font-bold">Customers</h2><button onclick="selectAll()" class="bg-gray-200 px-4 py-2 rounded-lg text-sm">Select All</button></div>
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-3xl font-bold">Customers</h2>
+        <button onclick="selectAll()" class="bg-gray-200 px-4 py-2 rounded-lg text-sm">Select All</button>
+      </div>
       <div class="bg-white rounded-2xl shadow overflow-hidden">
-        <table class="w-full text-sm"><thead class="bg-gray-50"><tr><th class="px-6 py-4 text-left">Phone</th><th class="text-right px-6">Action</th></tr></thead>
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50"><tr><th class="px-6 py-4 text-left">Phone</th><th class="text-right px-6">Action</th></tr></thead>
           <tbody class="divide-y">
-            \( {users.map(p => `<tr><td class="px-6 py-4"><input type="checkbox" value=" \){p}" class="mr-3 selected-customers"> <strong>${p}</strong></td>
-              <td class="text-right px-6"><button onclick="openBroadcastModal(['${p}'])" class="text-blue-600 hover:underline">Message</button></td></tr>`).join("")}
+            ${users.length === 0 ? '<tr><td colspan="2" class="text-center py-8 text-gray-500">No customers yet</td></tr>' : 
+              users.map(p => 
+                `<tr>
+                  <td class="px-6 py-4"><input type="checkbox" value="\( {p}" class="mr-3 selected-customers"> <strong> \){p}</strong></td>
+                  <td class="text-right px-6"><button onclick="openBroadcast(['${p}'])" class="text-blue-600 hover:underline">Message</button></td>
+                </tr>`
+              ).join("")}
           </tbody>
         </table>
       </div>
     </section>
 
     <section id="packages" class="hidden">
-      <div class="flex justify-between mb-6"><h2 class="text-3xl font-bold">Packages</h2>
-        <button onclick="document.getElementById('addPkgModal').classList.remove('hidden')" class="bg-blue-600 text-white px-6 py-3 rounded-xl">+ Add Package</button>
+      <div class="flex justify-between mb-6">
+        <h2 class="text-3xl font-bold">Packages</h2>
+        <button onclick="document.getElementById('addModal').classList.remove('hidden')" class="bg-blue-600 text-white px-6 py-3 rounded-xl">+ Add Package</button>
       </div>
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        ${packages.map(p => `<div class="bg-white rounded-2xl shadow p-6 border hover:shadow-xl transition">
-          <div class="flex justify-between items-start mb-4">
-            <span class="text-xs font-medium text-gray-500 uppercase">${p.category}</span>
-            <button onclick="deletePkg(${p.id})" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>
+        ${packages.map(p => `
+          <div class="bg-white rounded-2xl shadow p-6 border hover:shadow-xl transition">
+            <div class="flex justify-between mb-4">
+              <span class="text-xs font-medium text-gray-500 uppercase">${p.category}</span>
+              <button onclick="deletePkg(${p.id})" class="text-red-500 hover:text-red-700"><i class="fas fa-trash"></i></button>
+            </div>
+            <h3 class="text-xl font-bold">${p.title}</h3>
+            <p class="text-3xl font-bold text-green-600 mt-3">KSh ${p.price}</p>
           </div>
-          <h3 class="text-xl font-bold">${p.title}</h3>
-          <p class="text-3xl font-bold text-green-600 mt-3">KSh ${p.price}</p>
-        </div>`).join("")}
+        `).join("")}
       </div>
     </section>
 
     <section id="broadcast" class="hidden">
       <h2 class="text-3xl font-bold mb-8">Broadcast Message</h2>
-      <div class="bg-white rounded-2xl shadow p-8 max-w-2xl">
-        <textarea id="bText" rows="6" class="w-full border rounded-xl p-4 focus:ring-2 focus:ring-blue-500" placeholder="Your message..."></textarea>
+      <div class="bg-white rounded-2xl shadow p-8 max-w-2xl mx-auto">
+        <textarea id="msgText" rows="6" class="w-full border rounded-xl p-4" placeholder="Your message..."></textarea>
         <div class="grid grid-cols-2 gap-4 mt-4">
-          <input id="b1" placeholder="Button 1" class="border rounded-xl px-4 py-3">
-          <input id="b2" placeholder="Button 2" class="border rounded-xl px-4 py-3">
+          <input id="btn1" placeholder="Button 1" class="border rounded-xl px-4 py-3">
+          <input id="btn2" placeholder="Button 2" class="border rounded-xl px-4 py-3">
         </div>
-        <button onclick="openBroadcastModal()" class="mt-6 w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 rounded-xl">
-          SEND TO SELECTED CUSTOMERS
+        <button onclick="openBroadcast()" class="mt-6 w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-bold py-4 rounded-xl">
+          SEND TO SELECTED
         </button>
       </div>
     </section>
@@ -139,96 +154,111 @@ router.get("/", (req, res) => {
         <table class="w-full">
           <thead class="bg-gray-50"><tr><th class="px-6 py-3 text-left">Time</th><th>Type</th><th>Phone</th><th>Message</th></tr></thead>
           <tbody>
-            \( {messageLog.map(l => `<tr class=" \){l.type==='IN'?'log-in':'log-out'}">
-              <td class="px-6 py-3">${l.time}</td>
-              <td><span class="px-3 py-1 rounded-full text-xs font-medium">${l.type}</span></td>
-              <td class="font-medium">${l.phone}</td>
-              <td class="text-gray-600">\( {l.content} \){l.content.length===100?'...':''}</td>
-            </tr>`).join("")}
+            ${messageLog.length === 0 ? '<tr><td colspan="4" class="text-center py-8 text-gray-500">No logs yet</td></tr>' :
+              messageLog.map(l => `
+                <tr class="${l.type === 'IN' ? 'bg-green-50' : 'bg-blue-50'}">
+                  <td class="px-6 py-3">${l.time}</td>
+                  <td><span class="px-3 py-1 rounded-full text-xs font-bold">${l.type}</span></td>
+                  <td class="font-medium">${l.phone}</td>
+                  <td class="text-gray-700">\( {l.content} \){l.content.length === 100 ? '...' : ''}</td>
+                </tr>
+              `).join("")}
           </tbody>
         </table>
       </div>
     </section>
   </main>
 
-  <!-- Modals -->
-  <div id="addPkgModal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-50">
+  <!-- Add Package Modal -->
+  <div id="addModal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-50">
     <div class="bg-white rounded-2xl p-8 w-full max-w-md">
       <h3 class="text-2xl font-bold mb-6">Add Package</h3>
-      <select id="newCat" class="w-full border rounded-xl px-4 py-3 mb-4"><option>data</option><option>minutes</option><option>sms</option></select>
-      <input id="newTitle" placeholder="Name" class="w-full border rounded-xl px-4 py-3 mb-4">
-      <input id="newPrice" type="number" placeholder="Price" class="w-full border rounded-xl px-4 py-3 mb-6">
+      <select id="cat" class="w-full border rounded-xl px-4 py-3 mb-4">
+        <option>data</option><option>minutes</option><option>sms</option>
+      </select>
+      <input id="title" placeholder="Name" class="w-full border rounded-xl px-4 py-3 mb-4">
+      <input id="price" type="number" placeholder="Price (KSh)" class="w-full border rounded-xl px-4 py-3 mb-6">
       <div class="flex gap-4">
-        <button onclick="this.closest('#addPkgModal').classList.add('hidden')" class="flex-1 bg-gray-200 py-3 rounded-xl">Cancel</button>
-        <button onclick="addNewPackage()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold">Add</button>
+        <button onclick="this.closest('#addModal').classList.add('hidden')" class="flex-1 bg-gray-200 py-3 rounded-xl">Cancel</button>
+        <button onclick="addPkg()" class="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold">Add</button>
       </div>
     </div>
   </div>
 
+  <!-- Broadcast Modal -->
   <div id="broadcastModal" class="fixed inset-0 bg-black bg-opacity-60 hidden flex items-center justify-center z-50">
     <div class="bg-white rounded-2xl p-8 w-full max-w-lg">
-      <h3 class="text-2xl font-bold mb-4">Confirm Broadcast</h3>
-      <textarea id="modalText" rows="5" class="w-full border rounded-xl p-4"></textarea>
-      <div class="grid grid-cols-2 gap-4 mt-4">
-        <input id="modalB1" placeholder="Button 1" class="border rounded-xl px-4 py-3">
-        <input id="modalB2" placeholder="Button 2" class="border rounded-xl px-4 py-3">
+      <h3 class="text-2xl font-bold mb-4">Send to <span id="count">0</span> customers</h3>
+      <textarea id="finalText" rows="5" class="w-full border rounded-xl p-4 mb-4"></textarea>
+      <div class="grid grid-cols-2 gap-4 mb-6">
+        <input id="finalBtn1" placeholder="Button 1" class="border rounded-xl px-4 py-3">
+        <input id="finalBtn2" placeholder="Button 2" class="border rounded-xl px-4 py-3">
       </div>
-      <button onclick="confirmSend()" class="mt-6 w-full bg-green-600 text-white font-bold py-4 rounded-xl">SEND NOW</button>
+      <button onclick="sendNow()" class="w-full bg-green-600 text-white font-bold py-4 rounded-xl">SEND NOW</button>
     </div>
   </div>
 
   <script>
-    const sections = ['dashboard','customers','packages','broadcast','logs'];
-    document.querySelectorAll('nav a').forEach(a => a.addEventListener('click', e => {
-      e.preventDefault();
-      const id = a.getAttribute('href').slice(1);
-      sections.forEach(s => document.getElementById(s).classList.toggle('hidden', s !== id));
-      document.querySelectorAll('nav a').forEach(l => l.classList.toggle('sidebar-active', l === a));
-    }));
+    const sections = document.querySelectorAll('section');
+    document.querySelectorAll('nav a').forEach(link => {
+      link.addEventListener('click', e => {
+        e.preventDefault();
+        const target = link.getAttribute('href');
+        sections.forEach(s => s.classList.add('hidden'));
+        document.querySelector(target).classList.remove('hidden');
+        document.querySelectorAll('nav a').forEach(a => a.classList.remove('sidebar-active'));
+        link.classList.add('sidebar-active');
+      });
+    });
 
-    function selectAll() { document.querySelectorAll('.selected-customers').forEach(c => c.checked = true); }
+    function selectAll() {
+      document.querySelectorAll('.selected-customers').forEach(c => c.checked = true);
+    }
 
-    let broadcastTargets = [];
-    function openBroadcastModal(preselected = null) {
-      broadcastTargets = preselected || Array.from(document.querySelectorAll('.selected-customers:checked')).map(c => c.value);
-      if (broadcastTargets.length === 0) return alert("Select at least one customer");
-      document.getElementById('modalText').value = document.getElementById('bText').value;
-      document.getElementById('modalB1').value = document.getElementById('b1').value;
-      document.getElementById('modalB2').value = document.getElementById('b2').value;
+    let selected = [];
+    function openBroadcast(single = null) {
+      selected = single || Array.from(document.querySelectorAll('.selected-customers:checked')).map(c => c.value);
+      if (selected.length === 0) return alert("Select at least one customer");
+      document.getElementById('count').textContent = selected.length;
+      document.getElementById('finalText').value = document.getElementById('msgText').value;
+      document.getElementById('finalBtn1').value = document.getElementById('btn1').value;
+      document.getElementById('finalBtn2').value = document.getElementById('btn2').value;
       document.getElementById('broadcastModal').classList.remove('hidden');
     }
 
-    function confirmSend() {
-      const text = document.getElementById('modalText').value.trim();
-      const b1 = document.getElementById('modalB1').value.trim();
-      const b2 = document.getElementById('modalB2').value.trim();
-      if (!text) return alert("Write a message");
+    function sendNow() {
+      const text = document.getElementById('finalText').value.trim();
+      const b1 = document.getElementById('finalBtn1').value.trim();
+      const b2 = document.getElementById('finalBtn2').value.trim();
+      if (!text) return alert("Message required");
       fetch('/broadcast', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({targets: broadcastTargets, text, btn1: b1||null, btn2: b2||null})
+        body: JSON.stringify({targets: selected, text, btn1: b1 || null, btn2: b2 || null})
       }).then(() => {
-        alert("Sent to " + broadcastTargets.length + " customers!");
+        alert("Sent to " + selected.length + " customers!");
         document.getElementById('broadcastModal').classList.add('hidden');
       });
     }
 
-    function addNewPackage() {
-      const cat = document.getElementById('newCat').value;
-      const title = document.getElementById('newTitle').value.trim();
-      const price = document.getElementById('newPrice').value;
-      if (!title || !price) return alert("Fill all");
-      fetch('/add-package', {method:'POST', body:new URLSearchParams({cat,title,price})})
-        .then(() => location.reload());
+    function addPkg() {
+      const cat = document.getElementById('cat').value;
+      const title = document.getElementById('title').value.trim();
+      const price = document.getElementById('price').value;
+      if (!title || !price) return alert("Fill all fields");
+      fetch('/add-package', {
+        method: 'POST',
+        body: new URLSearchParams({cat, title, price})
+      }).then(() => location.reload());
     }
 
     function deletePkg(id) {
-      if(confirm("Delete package?")) {
-        fetch('/delete-package/'+id, {method:'DELETE'}).then(() => location.reload());
+      if (confirm("Delete this package?")) {
+        fetch('/delete-package/' + id, {method: 'DELETE'}).then(() => location.reload());
       }
     }
 
-    setInterval(() => location.reload(), 45000);
+    setInterval(() => location.reload(), 60000);
   </script>
 </body>
 </html>`);
@@ -247,13 +277,13 @@ router.delete("/delete-package/:id", (req, res) => {
 });
 
 router.post("/broadcast", async (req, res) => {
-  const { targets, text, btn1, btn2 } = req.body;
+  let { targets, text, btn1, btn2 } = req.body;
+  if (!Array.isArray(targets)) targets = [];
   const buttons = [];
-  if (btn1) buttons.push({ type: "reply", reply: { id: "b1", title: btn1 } });
-  if (btn2) buttons.push({ type: "reply", reply: { id: "b2", title: btn2 } });
+  if (btn1) buttons.push({ type: "reply", reply: { id: "1", title: btn1 } });
+  if (btn2) buttons.push({ type: "reply", reply: { id: "2", title: btn2 } });
 
-  const recipientList = Array.isArray(targets) ? targets : [];
-  for (const to of recipientList) {
+  for (const to of targets) {
     await sendWhatsAppMessage(to, text, buttons);
   }
   res.sendStatus(200);
